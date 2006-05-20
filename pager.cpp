@@ -144,14 +144,17 @@ void Pager::open(const string &file, int flags, int mode, uint16_t pagesize)
 
     //load free chunks
     //FIXME: no error check
-    do
+    if (m_write)
     {
-        m_free.add_header(new HeaderBuf(header));
-        printf("open freenodes -> %d, count freenodes-> %d, max freenodes -> %d\n", 
-                header.get_size(), header.count_freenodes(), header.max_freenodes());
+        do
+        {
+            m_free.add_header(new HeaderBuf(header));
+            printf("open freenodes -> %d, count freenodes-> %d, max freenodes -> %d\n", 
+                    header.get_size(), header.count_freenodes(), header.max_freenodes());
+        }
+        while (header.get_next() && read_page(header, header.get_next())); 
     }
-    while (header.get_next() && read_page(header, header.get_next())); 
-    
+
     m_opened = true;
     m_filename = file;
     m_pagecount = m_io.size() / m_pagesize;
@@ -160,7 +163,9 @@ void Pager::open(const string &file, int flags, int mode, uint16_t pagesize)
 
 void Pager::close()
 {
-    m_free.destroy();
+    if (m_write)
+        m_free.destroy();
+
     m_io.close();
     m_opened = false; 
 }
@@ -280,6 +285,9 @@ bool Pager::read_buf(void *buf, uint32_t bytes, uint32_t page, uint32_t rel)
 //zero out a section in the file
 void Pager::clear_span(uint32_t page, uint32_t span)
 {
+    if (!m_write)
+        throw IOException("file is readonly", m_filename);
+
     buffer zero(m_pagesize, 0);
     assert(page > 0);
     m_io.seek(physical(page));
@@ -290,6 +298,9 @@ void Pager::clear_span(uint32_t page, uint32_t span)
 
 uint32_t Pager::alloc_pages(uint32_t count, int flags)
 {
+    if (!m_write)
+        throw IOException("file is readonly", m_filename);
+
     uint32_t offset;
     FreeNode *node = m_free.pop_free(count);
 
@@ -338,6 +349,9 @@ uint32_t Pager::alloc_bytes(uint32_t bytes, int flags)
 
 void Pager::free_pages(uint32_t start, uint32_t count)
 {
+    if (!m_write)
+        throw IOException("file is readonly", m_filename);
+
     assert(start > 0);
 
     //add the free range to check for merges

@@ -48,9 +48,7 @@ void test_header()
 {
     Pager pgr;
     HashHeaderBuf hhb(pgr);
-    pgr_open(pgr, hhb, "test_header", Pager::OPEN_WRITE);
-    //FIXME: why isnt read access enough?
-    //pgr_open(pgr, hhb, "test_header", Pager::OPEN_READ);
+    pgr_open(pgr, hhb, "test_header", Pager::OPEN_READ);
 
     printf("size -> %d\n", hhb.get_size());
     printf("maxrec -> %d\n", hhb.get_maxrec());
@@ -84,7 +82,7 @@ void read_array()
 {
     Pager pgr;
     HashHeaderBuf hhb(pgr);
-    pgr_open(pgr, hhb, "read_array");
+    pgr_open(pgr, hhb, "read_array", Pager::OPEN_READ);
     BucketArray barr(hhb);
 
     printf("bucket array len -> %d\n", barr.length());

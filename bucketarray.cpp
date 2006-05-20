@@ -143,6 +143,7 @@ void BucketArray::resize(uint32_t size)
         } 
         while (--oldchunk > newchunk);
 
+        // cap the list off
         m_pager.read_page(tb, m_heads.back());
         tb.set_next(0);
         m_pager.write_page(tb);

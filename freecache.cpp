@@ -20,8 +20,9 @@ void FreeCache::destroy()
 
     for (hiter = m_headers.begin(); hiter != m_headers.end(); hiter++)
     {
-        puts("writing header ");
         HeaderBuf *buf = *hiter;
+
+        puts("writing header ");
         buf->pager().write_page(*buf);
         delete buf;
     }

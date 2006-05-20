@@ -43,8 +43,11 @@ void Bucket::append(uint32_t hash32, const void *key, uint32_t ksize,
     Pager &pgr = m_head->pager();
     BucketBuf *iter;
     BucketBuf tmp(pgr, m_head->max_records());
-    tmp.allocate();
 
+    if (!pgr.writeable())
+        throw IOException("cannot append to readonly pagefile", pgr.filename());
+
+    tmp.allocate();
     iter = m_head;
 
     while (1)
@@ -116,6 +119,9 @@ void Bucket::copy_quick(BucketIter &ito, BucketIter &ifrom)
     BucketBuf *tobuf = ito.m_iter;
     BucketBuf *frombuf = ifrom.m_iter;
     Pager &pgr = tobuf->pager();
+
+    if (!pgr.writeable())
+        throw IOException("cannot append to readonly pagefile", pgr.filename());
     
     tobuf->iter_rewind();
 
@@ -241,6 +247,9 @@ void Bucket::remove(BucketIter &iter, int cleanup)
     Pager &pgr = m_head->pager();
     BucketBuf tmp(pgr, m_head->max_records()); 
 
+    if (!pgr.writeable())
+        throw IOException("cannot remove from readonly pagefile", pgr.filename());
+
     ibuck->remove_record(irec);
     if (!(cleanup & KEEPOVERFLOW) && irec.get_overflow_next())
     {
@@ -290,6 +299,9 @@ void Bucket::clear()
     BucketBuf iter(*m_head);
     Pager &pgr = m_head->pager();
     OverflowBuf obuf(pgr);
+
+    if (!pgr.writeable())
+        throw IOException("cannot remove from readonly pagefile", pgr.filename());
 
     m_head->clear_payload();
     m_head->set_size(0);

@@ -152,6 +152,7 @@ namespace ST
         string filename() const { return m_filename; }
         uint32_t length() const { return m_pagecount; }
         uint16_t pagesize() const { return m_pagesize; }
+        bool writeable() const { return m_write; }
 
     protected:
         int64_t physical(uint32_t page) { return (int64_t)m_pagesize * (int64_t)page; }
