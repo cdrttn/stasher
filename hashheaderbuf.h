@@ -58,6 +58,7 @@ namespace ST
 
         //below for dealing with bucket chunk heads
         uint16_t get_chunkcount() const { return get_uint16(m_buf, HH_CHUNKS); }
+        //uint16_t max_chunks() const { return 1; }
         uint16_t max_chunks() const { return get_payloadsize() / BUCKET_CHUNK; }
 
         uint32_t get_chunk(uint16_t i) 

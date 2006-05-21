@@ -42,10 +42,13 @@ void BucketArray::read_heads()
     
     while (1)
     {
+        assert(iter == &m_hhb || iter->get_chunkcount() > 0);
+
         uint16_t i;
         for (i = 0; i < iter->get_chunkcount(); i++)
             m_heads.push_back(iter->get_chunk(i));
 
+        
         //don't clone the main header to keep it synched
         if (iter == &m_hhb)
             m_headbufs.push_back(iter);
@@ -59,6 +62,8 @@ void BucketArray::read_heads()
         iter = &tmp;
     }
 
+    printf("heads(%d), headbufs(%d)\n", m_heads.size(), m_headbufs.size());
+    
     //XXX: should check for errors (iter->validate)
     //
     //XXX: should verify that the number of heads read in 
@@ -78,13 +83,13 @@ void BucketArray::append_head(uint32_t offset)
     {
         uint32_t ptr = m_pager.alloc_pages(1);
         HashHeaderBuf *hhb = new HashHeaderBuf(m_pager);
+        m_headbufs.push_back(hhb);
 
         hhb->allocate();
         hhb->clear();
         hhb->create();
         hhb->append_chunk(offset);
         m_pager.write_page(*hhb, ptr);
-
         back->set_next(ptr);
     }
 
