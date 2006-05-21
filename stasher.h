@@ -120,6 +120,13 @@ namespace ST
             return get(&key[0], key.size(), value);
         }
 
+        //removes all entries with key, returning true, or false if no matches
+        bool remove(const void *key, uint32_t klen);
+        bool remove(const buffer &key)
+        {
+            return remove(&key[0], key.size());
+        }
+        
     private:
         void init();
         uint32_t address(uint32_t hash32);

@@ -2,6 +2,7 @@
 #define _HASHHEADERBUF_H_
 
 #include "pager.h"
+#include <assert.h>
 
 namespace ST
 {
@@ -9,6 +10,7 @@ namespace ST
     {
     public:
         static const uint8_t HH_MARKER = 'S';
+        static const int BUCKET_CHUNK = 4;
 
         enum
         {
@@ -20,7 +22,8 @@ namespace ST
             HH_SPLITPOS = HH_MAXEXP + 1,   
             HH_HASHLEVEL = HH_SPLITPOS + 4,    
             HH_DUPES = HH_HASHLEVEL + 4,
-            HH_END = HH_DUPES + 1,
+            HH_CHUNKS = HH_DUPES + 1,
+            HH_END = HH_CHUNKS + 2,
         };
 
     public:
@@ -52,6 +55,32 @@ namespace ST
 
         void set_hashlevel(uint32_t hl) { set_uint32(m_buf, HH_HASHLEVEL, hl); }
         uint32_t get_hashlevel() const { return get_uint32(m_buf, HH_HASHLEVEL); }
+
+        //below for dealing with bucket chunk heads
+        uint16_t get_chunkcount() const { return get_uint16(m_buf, HH_CHUNKS); }
+        uint16_t max_chunks() const { return get_payloadsize() / BUCKET_CHUNK; }
+
+        uint32_t get_chunk(uint16_t i) 
+        {
+            assert(i < max_chunks());
+            return get_uint32(get_payload(), i * BUCKET_CHUNK);
+        }
+
+        void append_chunk(uint32_t chunk)
+        {
+            assert(get_chunkcount() < max_chunks());
+            set_uint32(get_payload(), get_chunkcount() * BUCKET_CHUNK, chunk); 
+            set_chunkcount(get_chunkcount() + 1);
+        }
+
+        void shrink_chunk()
+        {
+            assert(get_chunkcount() > 0);
+            set_chunkcount(get_chunkcount() - 1);
+        }
+
+    private:
+        void set_chunkcount(uint16_t c) { set_uint16(m_buf, HH_CHUNKS, c); }
     };
 }
 

@@ -22,7 +22,9 @@ int main(int argc, char **argv)
 
     st.open(argv[1], Stasher::OPEN_WRITE);
 
-    for (int i = 0; i < 29999; i++)
+    int i;
+
+    for (i = 0; i < 299; i++)
     {
         char value[128];
         sprintf(value, "value for %d", i);
@@ -30,18 +32,24 @@ int main(int argc, char **argv)
         printf("PUT key(%d), bvalue(%s)\n", i, value);
     }
 
-    //st.close();
+    for (i = 1; i < 299; i+=2)
+    {
+        st.remove(&i, sizeof i);
+    }
+
+    st.close();
     //st.open(argv[1]);
     //Stasher st2;
-    //st.open(argv[1]);
+    st.open(argv[1]);
     printf("length -> %lld\n", st.length());
 
-    for (int i = 0; i < 29999; i++)
+    for (i = 0; i < 299; i++)
     {
         buffer bvalue;
-        assert(st.get(&i, sizeof i, bvalue));
-   
-        printf("GET key(%d), bvalue(%s)\n", i, &bvalue[0]);
+        if (st.get(&i, sizeof i, bvalue))
+            printf("GET key(%d), bvalue(%s)\n", i, &bvalue[0]);
+        else
+            printf("GET key(%d) NOT FOUND\n", i);
     }
 
     return 0;

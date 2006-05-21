@@ -17,17 +17,100 @@ BucketArray::BucketArray(HashHeaderBuf &hhb)
     read_heads(); 
 }
 
+BucketArray::~BucketArray()
+{
+    if (!m_pager.writeable())
+        return;
+
+    size_t i;
+    for (i = 0; i < m_headbufs.size(); i++)
+    {
+        HashHeaderBuf *hhb = m_headbufs[i];
+
+        m_pager.write_page(*hhb);
+        if (hhb != &m_hhb)
+            delete hhb;
+    }
+}
+
 void BucketArray::read_heads()
 {
-    PageBuf tmp(m_pager);
-    PageBuf *iter;
+    HashHeaderBuf tmp(m_pager);
+    HashHeaderBuf *iter;
 
     iter = &m_hhb;
-    while (iter->get_next())
+    
+    while (1)
     {
-        m_heads.push_back(iter->get_next());
+        uint16_t i;
+        for (i = 0; i < iter->get_chunkcount(); i++)
+            m_heads.push_back(iter->get_chunk(i));
+
+        //don't clone the main header to keep it synched
+        if (iter == &m_hhb)
+            m_headbufs.push_back(iter);
+        else
+            m_headbufs.push_back(new HashHeaderBuf(*iter));
+
+        if (!iter->get_next())
+            break;
+
         m_pager.read_page(tmp, iter->get_next());
         iter = &tmp;
+    }
+
+    //XXX: should check for errors (iter->validate)
+    //
+    //XXX: should verify that the number of heads read in 
+    //     is suitable for # of buckets (hhb.get_size())
+}
+
+void BucketArray::append_head(uint32_t offset) 
+{
+    assert(!m_headbufs.empty());
+    HashHeaderBuf *back = m_headbufs.back();
+
+    m_heads.push_back(offset);
+
+    if (back->get_chunkcount() < back->max_chunks())
+        back->append_chunk(offset);
+    else
+    {
+        uint32_t ptr = m_pager.alloc_pages(1);
+        HashHeaderBuf *hhb = new HashHeaderBuf(m_pager);
+
+        hhb->allocate();
+        hhb->clear();
+        hhb->create();
+        hhb->append_chunk(offset);
+        m_pager.write_page(*hhb, ptr);
+
+        back->set_next(ptr);
+    }
+
+    m_pager.write_page(*back);
+}
+
+void BucketArray::shrink_head()
+{
+    assert(!m_headbufs.empty());
+    HashHeaderBuf *back = m_headbufs.back();
+
+    assert(back->get_chunkcount() > 0);
+    assert(back->get_chunk(back->get_chunkcount() - 1) == m_heads.back());
+    back->shrink_chunk();
+    m_heads.pop_back();
+
+    if (back->get_chunkcount() == 0 && m_headbufs.size() > 1)
+    {
+        m_pager.free_pages(back->get_page(), 1);
+        m_headbufs.pop_back();
+        if (back != &m_hhb)
+            delete back;
+       
+        back = m_headbufs.back();
+        back->set_next(0);
+        m_pager.write_page(*back);
     }
 }
 
@@ -85,6 +168,15 @@ bool BucketArray::get(Bucket &bucket, uint32_t index)
     //XXX: bb->create() if invalid?
 }
 
+//FIXME: 
+//bleh, linking the bucket chunks together causes problems for get()
+//and append()... bug is difficult to explain. Briefly, if a bucket is gotten,
+//then a new bucket appended, the bucket gotten may not have the new link
+//data generated due to the subsequent call to append(). The link structure is
+//corrupted when the unsync'd gotten bucket is written out.
+//
+//I'm thinking it would be best to dump the linked list and store bucket heads
+//in HashHeaderBuf ala HeaderBuf/FreeNode. It would be faster for loading, too.
 void BucketArray::resize(uint32_t size)
 {
     uint32_t oldchunk, newchunk, tmp;
@@ -112,8 +204,7 @@ void BucketArray::resize(uint32_t size)
         //XXX add first bucket
         assert(length() == 0);
         uint32_t ptr = m_pager.alloc_pages(1, Pager::ALLOC_CLEAR);
-        m_hhb.set_next(ptr);
-        m_heads.push_back(ptr);
+        append_head(ptr);
     }
 
     if (newchunk > oldchunk)
@@ -124,10 +215,7 @@ void BucketArray::resize(uint32_t size)
             uint32_t span = chunk_length(oldchunk);
             uint32_t ptr = m_pager.alloc_pages(span, Pager::ALLOC_CLEAR);
 
-            m_pager.read_page(tb, m_heads.back());
-            tb.set_next(ptr);
-            m_pager.write_page(tb);
-            m_heads.push_back(ptr);
+            append_head(ptr);
         }
     }
     else if (newchunk < oldchunk)
@@ -139,14 +227,9 @@ void BucketArray::resize(uint32_t size)
 
             assert(m_heads[oldchunk] == m_heads.back());
             m_pager.free_pages(m_heads.back(), span);
-            m_heads.pop_back();
+            shrink_head();
         } 
         while (--oldchunk > newchunk);
-
-        // cap the list off
-        m_pager.read_page(tb, m_heads.back());
-        tb.set_next(0);
-        m_pager.write_page(tb);
     }
     //if newchunk == oldchunk, there's enough space left in the current chunk to handle size
   
@@ -154,9 +237,9 @@ void BucketArray::resize(uint32_t size)
     if (size == 0)
     {
         assert(m_heads.size() == 1);
+        assert(m_headbufs.size() == 1);
         m_pager.free_pages(m_heads.front(), 1);
-        m_heads.clear();
-        m_hhb.set_next(0);
+        shrink_head();
     }
     
     m_hhb.set_size(size);
@@ -177,12 +260,22 @@ void BucketArray::append(Bucket &bucket)
     }
 
     uint32_t chunk, subindex;
+    uint32_t ptr;
     find_chunk(len, chunk, subindex);
 
+    ptr = m_heads[chunk] + subindex; 
+    
     bb->allocate();
     bb->clear();
     bb->create();
-    bb->set_page(m_heads[chunk] + subindex);
+    bb->set_page(ptr);
+    //bb->set_next(m_heads[chunk]);
+}
+
+void BucketArray::last(Bucket &bucket)
+{
+    assert(length() > 0);
+    get(bucket, length() - 1);
 }
 
 void BucketArray::shrink()

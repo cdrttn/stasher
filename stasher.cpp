@@ -147,6 +147,7 @@ void Stasher::split_bucket()
     //rehash items 
     Bucket from, to;
     BucketIter ifrom, ito;
+
     m_array->get(from, old_split);
     m_array->append(to); 
 
@@ -169,6 +170,38 @@ void Stasher::split_bucket()
 
 void Stasher::join_bucket()
 {
+    uint32_t old_level, old_split;
+
+    old_level = m_hhb->get_hashlevel();
+    old_split = m_hhb->get_splitpos();
+
+    if (old_split == 0)
+    {
+        assert(old_level > 0);
+        old_level--;
+        m_hhb->set_hashlevel(old_level);
+        m_hhb->set_splitpos(pow2(old_level) - 1);
+    }
+    else
+        m_hhb->set_splitpos(old_split - 1);
+
+    //move items of the last bucket to split pos
+    Bucket from, to;
+    BucketIter ifrom, ito;
+
+    m_array->get(to, m_hhb->get_splitpos());
+    m_array->last(from); 
+
+    ifrom = from.iter();
+    ito = to.iter();
+
+    while (ifrom.next())
+    {
+        to.copy_quick(ito, ifrom);
+        from.remove(ifrom, Bucket::NOCLEAN | Bucket::KEEPOVERFLOW);
+    }
+
+    m_array->shrink();
 }
 
 bool Stasher::put(const void *key, uint32_t klen, const void *value, uint32_t vlen)
@@ -233,3 +266,51 @@ bool Stasher::get(const void *key, uint32_t klen, buffer &value)
 
     return false;
 }
+
+//XXX: this copies too much code
+bool Stasher::remove(const void *key, uint32_t klen)
+{
+    uint32_t hash32;
+    Bucket bucket;
+    bool allhash = true;
+    bool found = false;
+
+    hash32 = m_hashfunc(key, klen);
+    m_array->get(bucket, address(hash32));
+
+    BucketIter iter = bucket.iter();
+    buffer keytest;
+    while (iter.next())
+    {
+        if (hash32 == iter.get_hash32())
+        {
+            iter.get_key(keytest);
+            if (keytest.size() == klen && !memcmp(&keytest[0], key, klen))
+            {
+                bucket.remove(iter, Bucket::NOCLEAN);
+                found = true;
+            }
+            else
+            {
+                keytest.clear();
+                allhash = false;
+            } 
+        }
+    }
+
+    //FIXME: compact bucket
+    
+    if (found)
+        m_hhb->set_itemcount(m_hhb->get_itemcount() - 1);
+
+    if (allhash)
+    {
+        m_hhb->set_unique_hashes(m_hhb->get_unique_hashes() - 1);
+
+        if ((m_hhb->get_unique_hashes() % m_hhb->get_capacity()) == 0)
+            join_bucket();
+    }
+
+    return false;
+}
+

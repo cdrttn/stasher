@@ -193,6 +193,7 @@ int main(int argc, char **argv)
         test_header();
         resize_array(0);
         test_header();
+        /*
         random_array();
         read_array();
         test_header();
@@ -200,6 +201,7 @@ int main(int argc, char **argv)
         test_header();
         resize_array(0);
         test_header();
+        */
     }
     catch (CException e)
     {
