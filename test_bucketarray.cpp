@@ -96,7 +96,8 @@ void read_array()
     {
         barr.get(bucket, i);
         buffer k, v;
-        BucketIter iter = bucket.iter();
+        BucketIter iter; //= bucket.iter();
+        iter = bucket.iter();
         while (iter.next())
         {
             iter.get_key(k);

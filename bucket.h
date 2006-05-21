@@ -17,7 +17,10 @@ namespace ST
     public:
         friend class Bucket;
         
-        BucketIter(): m_pptr(0), m_iter(NULL), m_xtra(NULL) {}
+        BucketIter();
+        BucketIter(const BucketIter &iter);
+        BucketIter &operator=(const BucketIter &iter);
+
         ~BucketIter();
 
         void get_key(buffer &key);
@@ -29,6 +32,7 @@ namespace ST
     private:
         BucketIter(BucketBuf *iter);
         void load_overflow();
+        void copy(const BucketIter &iter);
         
         uint32_t m_pptr;
         BucketBuf *m_iter; 

@@ -20,6 +20,7 @@ Bucket::Bucket(BucketBuf *head)
     //assert(head->allocated());
 }
 
+
 Bucket::~Bucket()
 {
     delete m_head;
@@ -150,10 +151,12 @@ void Bucket::copy_quick(BucketIter &ito, BucketIter &ifrom)
     }
 
     tobuf->record() = frombuf->record();
+    tobuf->set_size(tobuf->get_size() + 1);
     pgr.write_page(*tobuf);
 
     if (tobuf->get_page() == m_head->get_page())
         *m_head = *tobuf;
+    assert(tobuf->count_records() == tobuf->get_size());
 }
 
 //Move records from cur to prev. 
@@ -345,13 +348,50 @@ bool Bucket::empty()
 
 BucketIter Bucket::iter()
 {
-    return BucketIter(new BucketBuf(*m_head));
+    BucketIter iter(m_head);
+    return iter;
 }
 
 BucketIter::BucketIter(BucketBuf *iter): 
     m_pptr(0), m_iter(iter), m_xtra(NULL)
 {
+    m_iter = new BucketBuf(*iter); 
     m_iter->iter_rewind();
+}
+
+BucketIter::BucketIter() 
+{
+    m_pptr = 0;
+    m_iter = NULL; 
+    m_xtra = NULL; 
+}
+
+BucketIter::BucketIter(const BucketIter &iter)
+{
+    copy(iter);
+}
+
+BucketIter &BucketIter::operator=(const BucketIter &iter)
+{
+    copy(iter);
+    return *this;
+}
+
+void BucketIter::copy(const BucketIter &iter)  
+{
+    m_pptr = iter.m_pptr;
+    if (iter.m_iter)
+    {
+        m_iter = new BucketBuf(*iter.m_iter);
+        m_iter->iter_rewind();
+    }
+    else 
+        m_iter = NULL;
+
+    if (iter.m_xtra)
+        m_xtra = new OverflowBuf(*iter.m_xtra);
+    else
+        m_xtra = NULL;
 }
 
 BucketIter::~BucketIter()
