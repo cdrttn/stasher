@@ -210,6 +210,9 @@ bool Stasher::put(const void *key, uint32_t klen, const void *value, uint32_t vl
     Bucket bucket;
     bool gotdup = false;
 
+    if (!klen || !vlen)
+        return false;
+    
     hash32 = m_hashfunc(key, klen);
     m_array->get(bucket, address(hash32));
 
@@ -244,6 +247,9 @@ bool Stasher::get(const void *key, uint32_t klen, buffer &value)
     uint32_t hash32;
     Bucket bucket;
 
+    if (!klen)
+        return false;
+
     hash32 = m_hashfunc(key, klen);
     m_array->get(bucket, address(hash32));
 
@@ -274,6 +280,9 @@ bool Stasher::remove(const void *key, uint32_t klen)
     Bucket bucket;
     bool allhash = true;
     bool found = false;
+
+    if (!klen)
+        return false;
 
     hash32 = m_hashfunc(key, klen);
     m_array->get(bucket, address(hash32));

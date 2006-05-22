@@ -37,6 +37,8 @@ int main(int argc, char **argv)
         st.remove(&i, sizeof i);
     }
 
+    st.put("you have big boobies", "i know you will");
+    
     st.close();
     //st.open(argv[1]);
     //Stasher st2;
@@ -52,5 +54,9 @@ int main(int argc, char **argv)
             printf("GET key(%d) NOT FOUND\n", i);
     }
 
+    string sval;
+    assert(st.get("you have big boobies", sval));
+    printf("you have big boobies -> %s\n", sval.c_str()); 
+    
     return 0;
 }

@@ -112,12 +112,28 @@ namespace ST
         { 
             return put(&key[0], key.size(), &value[0], value.size()); 
         }
-       
+        bool put(const string &key, const string &value) 
+        { 
+            return put(key.data(), key.size(), value.data(), value.size()); 
+        }
+      
+        
         //returns true and first value found for key, or false if not found
         bool get(const void *key, uint32_t klen, buffer &value);
         bool get(const buffer &key, buffer &value)
         {
             return get(&key[0], key.size(), value);
+        }
+        //convenience function makes a copy to a string
+        bool get(const string &key, string &value)
+        {
+            buffer tmp;
+            bool ret = get(key.data(), key.size(), tmp);
+
+            if (ret)
+                value.assign((char *)&tmp[0], tmp.size());
+            
+            return ret;
         }
 
         //removes all entries with key, returning true, or false if no matches

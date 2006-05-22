@@ -6,6 +6,9 @@ LDFLAGS = -lm
 
 OBJ = pager.o freecache.o fileio.o headerbuf.o bucketbuf.o bucket.o overflowbuf.o bucketarray.o hashfunc.o stasher.o
 
+mem: test_mem.o $(OBJ)
+	$(CPP) -o mem test_mem.o $(OBJ) $(LDFLAGS)
+
 stasher: test_stasher.o $(OBJ)
 	$(CPP) -o stasher test_stasher.o $(OBJ) $(LDFLAGS)
 

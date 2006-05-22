@@ -37,10 +37,11 @@ BasicBuf::BasicBuf(Pager &pgr, uint32_t metasize):
 {
 }
 
+//XXX: copy operations buggy?
 // copy operations allocate a new buffer and copy over
 // avoid copying if possible
 BasicBuf::BasicBuf(const BasicBuf &bbuf):
-    m_pager(bbuf.m_pager)
+    m_pager(bbuf.m_pager), m_buf(NULL)
 {
     copy(bbuf);
 }
@@ -58,7 +59,6 @@ void BasicBuf::copy(const BasicBuf &bbuf)
     m_pagesize = bbuf.m_pagesize;
     m_dirty = bbuf.m_dirty;
     m_metasize = bbuf.m_metasize;
-    m_buf = NULL;
 
     if (bbuf.m_buf)
     {
@@ -161,6 +161,8 @@ void Pager::open(const string &file, int flags, int mode, uint16_t pagesize)
     assert(m_io.size() == physical(m_pagecount));
 } 
 
+static int acount = 0;
+
 void Pager::close()
 {
     if (m_write)
@@ -168,11 +170,14 @@ void Pager::close()
 
     m_io.close();
     m_opened = false; 
+
+    printf("current alloc count -> %d\n", acount);
 }
 
 void Pager::mem_alloc_page(BasicBuf &buf)
 {
     assert(!buf.allocated());
+    acount++;
 
     uint8_t *data = new uint8_t[m_pagesize];
     buf.set_buf(data);
@@ -184,8 +189,10 @@ void Pager::mem_free_page(BasicBuf &buf)
     uint8_t *data = buf.get_buf();
     if (data)
     {
+        acount--;
+
         assert(buf.get_pagesize() == m_pagesize);
-        delete data;
+        delete [] data;
         buf.set_buf(NULL);
     }
 }
