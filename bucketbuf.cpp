@@ -151,6 +151,30 @@ bool BucketBuf::insert_record(Record &rec)
     return true;
 }
 
+void BucketBuf::remove_record(Record &rec)
+{
+    uint8_t *rptr, *start, *dest;
+    uint16_t osize;
+
+    rptr = rec.m_recptr_save;
+    if (!rptr)
+        return;
+
+    assert(rptr >= get_payload() && rptr < get_payload() + get_payloadsize());
+
+    rec.copyfrom(rptr);
+    osize = get_size();
+    set_size(osize + rec.get_size());
+    dest = get_payload() + get_size();
+    start = get_payload() + osize;
+
+    //no need to move the first element
+    if (get_payload() + osize != rptr) 
+        memmove(dest, start, rptr - start);
+
+    memset(start, 0, rec.get_size());
+}
+
 void BucketBuf::first_record(Record &rec)
 {
     rec.m_recptr = get_payload() + get_size();
@@ -163,6 +187,7 @@ bool BucketBuf::next_record(Record &rec)
     
     rec.copyfrom(rec.m_recptr);
 
+    rec.m_recptr_save = rec.m_recptr;
     rec.m_recptr += rec.get_size();
 
     return true;

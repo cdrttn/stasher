@@ -30,7 +30,7 @@ namespace ST
             m_type(RECORD_EMPTY), m_size(0), m_key(NULL),
             m_value(NULL), m_hash32(0),
             m_overflow_next(0), m_keysize(0),
-            m_valuesize(0), m_recptr(NULL)
+            m_valuesize(0), m_recptr(NULL), m_recptr_save(NULL)
         {}
 
         int get_type() const { return m_type; }  
@@ -67,6 +67,7 @@ namespace ST
         uint32_t m_valuesize;
 
         uint8_t *m_recptr;
+        uint8_t *m_recptr_save;
 
     private:
         void copyto(uint8_t *buf);
@@ -108,7 +109,7 @@ namespace ST
         uint16_t count_records();
 
         bool insert_record(Record &rec);
-        //void remove_record(Record &rec);
+        void remove_record(Record &rec);
 
         void first_record(Record &rec);
         bool next_record(Record &rec);

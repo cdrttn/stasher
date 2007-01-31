@@ -17,10 +17,12 @@ void write_test(const char *file)
     bb.allocate();
     bb.create();
 
-    for (int i = 0; i < 25; i++)
-    {
-        Record rec;
+    Record rec;
+    int i;
 
+    i = 0;
+    do 
+    {
         sprintf(key, "this is key %d", i);
         sprintf(value, "this is value %d", i);
 
@@ -29,8 +31,20 @@ void write_test(const char *file)
         rec.set_key((uint8_t *)key);
         rec.set_value((uint8_t *)value);
 
-        bb.insert_record(rec);
+        i++;
+    } while (bb.insert_record(rec)); 
+
+    bb.first_record(rec);
+    i = 0;
+    while (bb.next_record(rec))
+    {
+        if (i++ > 89)
+            bb.remove_record(rec);
     }
+
+    bb.first_record(rec);
+    bb.next_record(rec);
+    bb.remove_record(rec);
 
     uint32_t pptr = pgr.alloc_pages(1);
     pgr.write_page(bb, pptr);
