@@ -5,120 +5,165 @@
 using namespace std;
 using namespace ST;
 
-
-//return the best compatible allocation strategy SMALL, MED, LARGE
-//SMALL: both key and value fit in a record
-//MED: key fits in record, value overflows
-//LARGE: key and value overflow
-int Record::fit_me(uint32_t key_size, uint32_t value_size) const
+#define MINFILL 4
+enum
 {
-    if (key_size + value_size < get_payloadsize())
-        return RECORD_SMALL;
+    RECORD_TYPE = 0,
 
-    if (key_size < get_payloadsize())
-        return RECORD_MEDIUM;
+    RECORD_S_KEYSIZE = 1,
+    RECORD_S_VALUESIZE = 3,
+    RECORD_S_END = 5,
 
-    return RECORD_LARGE;
-}
+    RECORD_M_KEYSIZE = 1,
+    RECORD_M_OVERFLOW_NEXT = 3,
+    RECORD_M_END = 7,
 
-void Record::set_payload(const void *key, uint16_t key_size) 
+    RECORD_L_HASH32 = 1,
+    RECORD_L_OVERFLOW_NEXT = 5,
+    RECORD_L_END = 9
+};
+
+int Record::set_type(uint16_t pgsz) 
 {
-    assert(key_size > 0);
-    assert(key_size < get_payloadsize());
+    uint16_t fill = pgsz / MINFILL;
 
-    set_keysize(key_size);
-    memcpy(get_payload(), key, key_size);
-}
-
-void Record::set_payload(const void *key, uint16_t key_size, 
-        const void *value, uint16_t value_size)
-{
-    assert(value_size > 0);
-    assert(key_size + value_size < get_payloadsize());
-
-    set_payload(key, key_size);
-    set_valuesize(value_size);
-    memcpy(get_payload() + key_size, value, value_size); 
-}
-
-
-bool BucketBuf::get_record(Record &rec, uint16_t index)
-{
-    assert(index < max_records());
-    uint8_t *pbuf = get_payload() + m_recsize * index;
-
-    rec.m_pbuf = pbuf;
-    rec.m_size = m_recsize;
-
-    //type should be > 0 for a valid record
-    if (rec.get_type() != Record::RECORD_EMPTY)
-        return true;
-
-    return false;
-}
-
-void BucketBuf::remove_record(Record &rec)
-{
-    assert(get_size() > 0);
-    assert(rec.m_size > 0);
-
-    memset(rec.m_pbuf, 0, rec.m_size);
-    set_size(get_size() - 1);
-}
-
-bool BucketBuf::insert_record(Record &rec)
-{
-    if (get_size() < max_records())
+    if (!m_key || !m_value || !m_keysize || !m_valuesize)
     {
-        for (int i = 0; i < max_records(); i++)
-        {
-            if (!get_record(rec, i))
-            {
-                set_size(get_size() + 1);
-                return true;
-            }
-        }
+        m_type = RECORD_EMPTY;
+        m_size = 0;
     }
-    
-    return false;
+    else if (m_keysize > fill) //Key and value overflow 
+    {
+        m_type = RECORD_LARGE;
+        m_size = RECORD_L_END; //Just metadata stored
+    }
+    else if (m_valuesize > fill) //Value overflows
+    {
+        m_type = RECORD_MEDIUM;
+        m_size = RECORD_M_END + m_keysize; 
+    }
+    else
+    {
+        m_type = RECORD_SMALL; //Clean fit
+        m_size = RECORD_S_END + m_keysize + m_valuesize;
+    }
+
+    return m_type;
 }
 
-//count records manually (for debugging, mainly)
+
+void Record::copyto(uint8_t *buf)
+{
+    buf[RECORD_TYPE] = m_type;
+   
+    // The caller is expected to allocate overflow pages prior to calling copyto()
+    
+    switch (m_type)
+    {
+        case RECORD_SMALL:
+            set_uint16(buf, RECORD_S_KEYSIZE, m_keysize);
+            set_uint16(buf, RECORD_S_VALUESIZE, m_valuesize);
+            buf += RECORD_S_END;
+            memcpy(buf, m_key, m_keysize);
+            buf += m_keysize;
+            memcpy(buf, m_value, m_valuesize);
+            break;
+
+        case RECORD_MEDIUM:
+            assert(m_overflow_next);
+            set_uint16(buf, RECORD_M_KEYSIZE, m_keysize);
+            set_uint32(buf, RECORD_M_OVERFLOW_NEXT, m_overflow_next);
+            buf += RECORD_M_END;
+            memcpy(buf, m_key, m_keysize);
+            break;
+
+        case RECORD_LARGE:
+            assert(m_overflow_next);
+            set_uint32(buf, RECORD_L_HASH32, m_hash32);
+            set_uint32(buf, RECORD_L_OVERFLOW_NEXT, m_overflow_next);
+            break;
+    }
+
+    //m_recptr = buf;
+}
+
+void Record::copyfrom(uint8_t *buf)
+{
+    m_type = buf[RECORD_TYPE];
+    m_key = m_value = NULL;
+
+    switch (m_type)
+    {
+        case RECORD_SMALL:
+            m_keysize = get_uint16(buf, RECORD_S_KEYSIZE);
+            m_valuesize = get_uint16(buf, RECORD_S_VALUESIZE);
+            m_key = buf + RECORD_S_END;
+            m_value = m_key + m_keysize;
+            m_size = RECORD_S_END + m_keysize + m_valuesize;
+            break;
+
+        case RECORD_MEDIUM:
+            m_keysize = get_uint16(buf, RECORD_M_KEYSIZE);
+            m_overflow_next = get_uint32(buf, RECORD_M_OVERFLOW_NEXT);
+            m_key = buf + RECORD_M_END;
+            m_size = RECORD_M_END + m_keysize; 
+            break;
+
+        case RECORD_LARGE:
+            m_hash32 = get_uint32(buf, RECORD_L_HASH32);
+            m_overflow_next = get_uint32(buf, RECORD_L_OVERFLOW_NEXT);
+            m_size = RECORD_L_END; 
+            break;
+    }
+}
+
 uint16_t BucketBuf::count_records()
 {
     Record rec;
-    uint16_t count = 0;
-
-    for (int i = 0; i < max_records(); i++)
-    {
-        if (get_record(rec, i))
-            count++;
-    }
+    uint16_t count;
+    
+    count = 0;
+    first_record(rec);
+    
+    while (next_record(rec))
+        count++;
 
     return count;
 }
 
-//find the next filled record
-bool BucketBuf::iter_next()
+bool BucketBuf::insert_record(Record &rec)
 {
-    while (m_iter_index < max_records()) 
-    {
-        if (get_record(m_iter_rec, m_iter_index++))
-            return true;
-    }
+    uint8_t *rptr;
 
-    return false;
+    rec.set_type(get_pagesize());
+    assert(rec.get_type() != Record::RECORD_EMPTY);
+
+    //no room for data
+    if (rec.get_size() > get_size())
+        return false;
+
+    //position of new data
+    set_size(get_size() - rec.get_size());
+    rptr = get_payload() + get_size();
+
+    rec.copyto(rptr);
+
+    return true;
 }
 
-//find the free filled record
-bool BucketBuf::free_next()
+void BucketBuf::first_record(Record &rec)
 {
-    while (m_iter_index < max_records()) 
-    {
-        if (!get_record(m_iter_rec, m_iter_index++))
-            return true;
-    }
-
-    return false;
+    rec.m_recptr = get_payload() + get_size();
 }
 
+bool BucketBuf::next_record(Record &rec)
+{
+    if (!rec.m_recptr || rec.m_recptr >= get_payload() + get_payloadsize())
+        return false;
+    
+    rec.copyfrom(rec.m_recptr);
+
+    rec.m_recptr += rec.get_size();
+
+    return true;
+}
