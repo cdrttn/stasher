@@ -147,18 +147,17 @@ void clear_bucket()
     pgr.free_pages(bb->get_page(), 1);
 }
 
-#if 0
 uint32_t copy_bucket()
 {
     Pager pgr;
-    pgr.open(filename, true);
+    pgr.open(filename, Pager::OPEN_WRITE);
     printf("opened (copy) -> %s, pages -> %d\n", pgr.filename().c_str(), pgr.length());
 
-    BucketBuf *first = new BucketBuf(pgr, capacity);
+    BucketBuf *first = new BucketBuf(pgr);
     Bucket bucket1(first); 
     pgr.read_page(*first, 1);
 
-    BucketBuf *second = new BucketBuf(pgr, capacity);
+    BucketBuf *second = new BucketBuf(pgr);
     Bucket bucket2(second); 
     second->allocate();
     second->clear();
@@ -170,13 +169,21 @@ uint32_t copy_bucket()
     BucketIter from = bucket1.iter();
     BucketIter to = bucket2.iter();
 
+    bool doo = true;
     while (from.next())
     {
-        //FIXME: too much copying
-        //iter1.get_key(key);
-        //iter1.get_value(value);
-        //bucket2.append(iter1.get_hash32(), key, value);
-        
+        if (doo)
+        {
+            bucket2.copy_quick(to, from);
+            bucket1.remove(from, Bucket::NOCLEAN | Bucket::KEEPOVERFLOW);
+        }
+        doo = !doo;
+    }
+   
+    from = bucket1.iter();
+    to = bucket2.iter();
+    while (from.next())
+    {
         bucket2.copy_quick(to, from);
         bucket1.remove(from, Bucket::NOCLEAN | Bucket::KEEPOVERFLOW);
     }
@@ -188,7 +195,6 @@ uint32_t copy_bucket()
     
     return newptr;
 }
-#endif
 
 int main(int argc, char **argv)
 {
@@ -208,7 +214,6 @@ int main(int argc, char **argv)
         FileIO::unlink(filename);
    
     //srandom(time(NULL));
-    /*    
     write_bucket();
     iter_bucket();
     del_bucket();
@@ -220,14 +225,15 @@ int main(int argc, char **argv)
     uint32_t newptr = copy_bucket();
     fprintf(stderr, "\nAfter Copy\n");
     iter_bucket(newptr);
-    */
 
+    /*
     write_bucket();
     iter_bucket();
-    del_bucket();
-    iter_bucket();
-    //clear_bucket();
+    //del_bucket();
+    //iter_bucket();
+    clear_bucket();
     ////iter_bucket();
+    */
 
     return 0;
 }

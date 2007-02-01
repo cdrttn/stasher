@@ -109,56 +109,47 @@ void Bucket::append(uint32_t hash32, const void *key, uint32_t ksize,
     }
 }
 
-#if 0
-
 //directly copy a record from iter ifrom to the next available location
 //in iter ito, preserving overflow ptrs. append overflow buckets as
 //required. iter ito is advanced forward. ito and ifrom should not be 
 //from the same bucket
 void Bucket::copy_quick(BucketIter &ito, BucketIter &ifrom)
 {
-    BucketBuf *tobuf = ito.m_iter;
-    BucketBuf *frombuf = ifrom.m_iter;
-    Pager &pgr = tobuf->pager();
+    BucketBuf &tobuf = *ito.m_biter;
+    Record &fromrec = ifrom.m_riter;
+    Pager &pgr = tobuf.pager();
 
     if (!pgr.writeable())
         throw IOException("cannot append to readonly pagefile", pgr.filename());
     
-    tobuf->iter_rewind();
-
-    while (!tobuf->free_next())
+    while (tobuf.get_freesize() < fromrec.get_size())
     {
-        if (tobuf->get_bucket_next())
-            pgr.read_page(*tobuf, tobuf->get_bucket_next());
+        if (tobuf.get_bucket_next())
+            pgr.read_page(tobuf, tobuf.get_bucket_next());
         else
         {
             uint32_t ptr = pgr.alloc_pages(1);
-            tobuf->set_bucket_next(ptr);
-            pgr.write_page(*tobuf);
+            tobuf.set_bucket_next(ptr);
+            pgr.write_page(tobuf);
 
-            if (tobuf->get_page() == m_head->get_page())
-                *m_head = *tobuf;
+            if (tobuf.get_page() == m_head->get_page())
+                *m_head = tobuf;
     
-            tobuf->clear();
-            tobuf->create();
-            tobuf->set_page(ptr);
+            tobuf.clear();
+            tobuf.create();
+            tobuf.set_page(ptr);
         }
         
-        if (!tobuf->validate())
+        if (!tobuf.validate())
             throw InvalidPageException("Invalid overflow bucket", pgr.filename());
-
-        tobuf->iter_rewind();
     }
 
-    tobuf->record() = frombuf->record();
-    tobuf->set_size(tobuf->get_size() + 1);
-    pgr.write_page(*tobuf);
+    tobuf.insert_record(fromrec);
+    pgr.write_page(tobuf);
 
-    if (tobuf->get_page() == m_head->get_page())
-        *m_head = *tobuf;
-    assert(tobuf->count_records() == tobuf->get_size());
+    if (tobuf.get_page() == m_head->get_page())
+        *m_head = tobuf;
 }
-#endif
 
 #define FULL 0.90
 #define MERGE_THRESHOLD 0.20

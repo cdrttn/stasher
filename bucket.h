@@ -67,9 +67,7 @@ namespace ST
         void remove(BucketIter &iter, int cleanup = 0);
         void compact();
         void clear(); 
-        /*
         void copy_quick(BucketIter &ito, BucketIter &ifrom);
-        */
         bool empty();
 
         BucketIter iter();

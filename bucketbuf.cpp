@@ -91,7 +91,9 @@ void Record::copyfrom(uint8_t *buf)
 {
     m_type = buf[RECORD_TYPE];
     m_key = m_value = NULL;
-
+    m_keysize = m_valuesize = 0;
+    m_hash32 = m_overflow_next = 0;
+    
     switch (m_type)
     {
         case RECORD_SMALL:
