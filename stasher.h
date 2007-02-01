@@ -17,6 +17,7 @@ namespace ST
     class Pager;
     class HashHeaderBuf;
     class BucketArray;
+    class BucketIter;
 
     class StasherOpts
     {
@@ -148,6 +149,7 @@ namespace ST
         uint32_t address(uint32_t hash32);
         void split_bucket();
         void join_bucket();
+        uint32_t do_hash(BucketIter &iter);
 
     private:
         bool m_opened;

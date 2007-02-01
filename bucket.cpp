@@ -38,7 +38,7 @@ BucketBuf *Bucket::get_head()
 }
 
 //Append a record to a bucket, adding overflows as neccesary. 
-void Bucket::append(uint32_t hash32, const void *key, uint32_t ksize, 
+bool Bucket::append(uint32_t hash32, const void *key, uint32_t ksize, 
     const void *value, uint32_t vsize)
 {
     Pager &pgr = m_head->pager();
@@ -46,6 +46,7 @@ void Bucket::append(uint32_t hash32, const void *key, uint32_t ksize,
     BucketBuf tmp(pgr); 
     uint32_t ptr; 
     Record rec;
+    bool full; //XXX testing
 
     if (!pgr.writeable())
         throw IOException("cannot append to readonly pagefile", pgr.filename());
@@ -53,6 +54,7 @@ void Bucket::append(uint32_t hash32, const void *key, uint32_t ksize,
     tmp.allocate();
     iter = m_head;
 
+    full = false;
     rec.set_hash32(hash32);
     rec.set_key(key); 
     rec.set_keysize(ksize);
@@ -105,8 +107,11 @@ void Bucket::append(uint32_t hash32, const void *key, uint32_t ksize,
             pgr.write_page(tmp, ptr);
 
             iter = &tmp;
+            full = true;
         }
     }
+
+    return full;
 }
 
 //directly copy a record from iter ifrom to the next available location
@@ -447,10 +452,10 @@ void BucketIter::load_overflow()
     }
 }
 
-uint32_t BucketIter::get_hash32()
+/*uint32_t BucketIter::get_hash32()
 {
     return m_riter.get_hash32();
-}
+}*/
 
 bool BucketIter::next()
 {

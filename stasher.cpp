@@ -129,6 +129,26 @@ inline uint32_t Stasher::address(uint32_t hash32)
     return hash32 % (2 * partition);
 }
 
+uint32_t Stasher::do_hash(BucketIter &iter)
+{
+    Record &rec = iter.record();
+    uint32_t hash32;
+
+    switch (rec.get_type())
+    {
+    case Record::RECORD_SMALL:
+    case Record::RECORD_MEDIUM:
+        hash32 = m_hashfunc(rec.get_key(), rec.get_keysize());
+        break;
+
+    case Record::RECORD_LARGE:
+        hash32 = rec.get_hash32();
+        break;
+    }
+
+    return hash32;
+}
+
 void Stasher::split_bucket()
 {
     uint32_t old_level, old_split;
@@ -156,7 +176,7 @@ void Stasher::split_bucket()
 
     while (ifrom.next())
     {
-        uint32_t newpos = address(ifrom.get_hash32());
+        uint32_t newpos = address(do_hash(ifrom));
         if (newpos != old_split)
         {
             to.copy_quick(ito, ifrom);
@@ -209,6 +229,7 @@ bool Stasher::put(const void *key, uint32_t klen, const void *value, uint32_t vl
     uint32_t hash32;
     Bucket bucket;
     bool gotdup = false;
+    bool full = false;
 
     if (!klen || !vlen)
         return false;
@@ -221,23 +242,29 @@ bool Stasher::put(const void *key, uint32_t klen, const void *value, uint32_t vl
     //XXX: hopefully, there are not too many overflow buckets, or this could be slow...
     while (iter.next() and !gotdup)
     {
-        if (iter.get_hash32() == hash32)
+        if (do_hash(iter) == hash32)
             gotdup = true;
     }
 
     if (!gotdup || !m_hhb->get_dupes())
-        bucket.append(hash32, key, klen, value, vlen);
+    {
+        full = bucket.append(hash32, key, klen, value, vlen);
+        if (full)
+            split_bucket();
+        
+        m_hhb->set_itemcount(m_hhb->get_itemcount() + 1);
+    }
     else
         return false;
+
 
     if (!gotdup)
     {
         m_hhb->set_unique_hashes(m_hhb->get_unique_hashes() + 1);
         if ((m_hhb->get_unique_hashes() % m_hhb->get_capacity()) == 0)
-            split_bucket();
+            ;
+            //split_bucket();
     }
-
-    m_hhb->set_itemcount(m_hhb->get_itemcount() + 1);
     
     return true;
 }
@@ -257,7 +284,7 @@ bool Stasher::get(const void *key, uint32_t klen, buffer &value)
     buffer keytest;
     while (iter.next())
     {
-        if (hash32 == iter.get_hash32())
+        if (hash32 == do_hash(iter))
         {
             iter.get_key(keytest);
             if (keytest.size() == klen && !memcmp(&keytest[0], key, klen))
@@ -291,7 +318,7 @@ bool Stasher::remove(const void *key, uint32_t klen)
     buffer keytest;
     while (iter.next())
     {
-        if (hash32 == iter.get_hash32())
+        if (hash32 == do_hash(iter))
         {
             iter.get_key(keytest);
             if (keytest.size() == klen && !memcmp(&keytest[0], key, klen))
@@ -317,7 +344,8 @@ bool Stasher::remove(const void *key, uint32_t klen)
         m_hhb->set_unique_hashes(m_hhb->get_unique_hashes() - 1);
 
         if ((m_hhb->get_unique_hashes() % m_hhb->get_capacity()) == 0)
-            join_bucket();
+            ;
+            //join_bucket();
     }
 
     return false;

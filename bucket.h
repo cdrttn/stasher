@@ -26,8 +26,9 @@ namespace ST
 
         void get_key(buffer &key);
         void get_value(buffer &value);
-        uint32_t get_hash32();
-
+        //uint32_t get_hash32();
+        Record &record() { return m_riter; }
+        
         bool next();
 
     private:
@@ -57,12 +58,12 @@ namespace ST
         void set_head(BucketBuf *head);
         BucketBuf *get_head();
 
-        void append(uint32_t hash32, const buffer &key, const buffer &value)
+        bool append(uint32_t hash32, const buffer &key, const buffer &value)
         {
-            append(hash32, &key[0], key.size(), &value[0], value.size());
+            return append(hash32, &key[0], key.size(), &value[0], value.size());
         }
 
-        void append(uint32_t hash32, const void *key, uint32_t ksize, 
+        bool append(uint32_t hash32, const void *key, uint32_t ksize, 
                 const void *value, uint32_t vsize);
         void remove(BucketIter &iter, int cleanup = 0);
         void compact();

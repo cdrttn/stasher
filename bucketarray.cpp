@@ -159,7 +159,7 @@ bool BucketArray::get(Bucket &bucket, uint32_t index)
     bb = bucket.get_head();
     if (!bb)
     {
-        bb = new BucketBuf(m_pager, m_hhb.get_maxrec());
+        bb = new BucketBuf(m_pager);
         bucket.set_head(bb);
     }
 
@@ -168,6 +168,7 @@ bool BucketArray::get(Bucket &bucket, uint32_t index)
 
     //exceptions should be OK; caller's bucket instance owns the heap memory
     m_pager.read_page(*bb, m_heads[chunk] + subindex);
+    if (!bb->validate()) bb->create(); 
     return bb->validate();
 
     //XXX: bb->create() if invalid?
@@ -260,7 +261,7 @@ void BucketArray::append(Bucket &bucket)
     BucketBuf *bb = bucket.get_head();
     if (!bb)
     {
-        bb = new BucketBuf(m_pager, m_hhb.get_maxrec());
+        bb = new BucketBuf(m_pager);
         bucket.set_head(bb);
     }
 

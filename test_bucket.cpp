@@ -76,7 +76,7 @@ void iter_bucket(uint32_t start = 1)
     buffer key, value;
     while (iter.next())
     {
-        printf("hash -> %d\n", iter.get_hash32());
+        printf("hash -> %d\n", iter.record().get_hash32());
         iter.get_key(key);
         fwrite(&key[0], key.size(), 1, stderr);
         putc(END, stderr);
@@ -113,7 +113,7 @@ void del_bucket()
         //bucket.remove(iter, Bucket::NOCLEAN);
         if (del > 0)
         {
-            printf("removing hash -> %d\n", iter.get_hash32());
+            printf("removing hash -> %d\n", iter.record().get_hash32());
             //bucket.remove(iter);
             bucket.remove(iter, Bucket::NOCLEAN);
             count++;
