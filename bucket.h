@@ -64,11 +64,11 @@ namespace ST
 
         void append(uint32_t hash32, const void *key, uint32_t ksize, 
                 const void *value, uint32_t vsize);
-        /*
-        void copy_quick(BucketIter &ito, BucketIter &ifrom);
         void remove(BucketIter &iter, int cleanup = 0);
         void compact();
         void clear(); 
+        /*
+        void copy_quick(BucketIter &ito, BucketIter &ifrom);
         */
         bool empty();
 

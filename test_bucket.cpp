@@ -34,7 +34,7 @@ int read_kv(FILE *fp, buffer &key, buffer &value)
 void write_bucket()
 {
     Pager pgr;
-    pgr.open(filename, true);
+    pgr.open(filename, Pager::OPEN_WRITE);
     printf("opened (write) -> %s, pages -> %d\n", pgr.filename().c_str(), pgr.length());
 
     BucketBuf *bb = new BucketBuf(pgr);
@@ -61,14 +61,13 @@ void write_bucket()
     fclose(fp);
 }
 
-#if 0
 void iter_bucket(uint32_t start = 1)
 {
     Pager pgr;
     pgr.open(filename, true);
     printf("opened (iter) -> %s, pages -> %d\n", pgr.filename().c_str(), pgr.length());
 
-    BucketBuf *bb = new BucketBuf(pgr, capacity);
+    BucketBuf *bb = new BucketBuf(pgr);
     pgr.read_page(*bb, start);
     Bucket bucket(bb); 
     BucketIter iter = bucket.iter();
@@ -95,15 +94,15 @@ void iter_bucket(uint32_t start = 1)
 void del_bucket()
 {
     Pager pgr;
-    pgr.open(filename, true);
+    pgr.open(filename, Pager::OPEN_WRITE);
     printf("opened (del) -> %s, pages -> %d\n", pgr.filename().c_str(), pgr.length());
 
-    BucketBuf *bb = new BucketBuf(pgr, capacity);
+    BucketBuf *bb = new BucketBuf(pgr);
     pgr.read_page(*bb, 1);
     Bucket bucket(bb); 
 
     int count = 0;
-    int maxdel = capacity-1;
+    int maxdel = 315;
     int walk = delspan;
     int del = 0;
 
@@ -111,9 +110,11 @@ void del_bucket()
 
     while (iter.next())
     {
+        //bucket.remove(iter, Bucket::NOCLEAN);
         if (del > 0)
         {
             printf("removing hash -> %d\n", iter.get_hash32());
+            //bucket.remove(iter);
             bucket.remove(iter, Bucket::NOCLEAN);
             count++;
             del--;
@@ -127,7 +128,7 @@ void del_bucket()
             walk--;
     }
 
-    printf("total removed -> %d\n", count);
+    printf("Total removed -> %d\n", count);
     
     bucket.compact();
 }
@@ -135,10 +136,10 @@ void del_bucket()
 void clear_bucket()
 {
     Pager pgr;
-    pgr.open(filename, true);
+    pgr.open(filename, Pager::OPEN_WRITE);
     printf("opened (clear) -> %s, pages -> %d\n", pgr.filename().c_str(), pgr.length());
 
-    BucketBuf *bb = new BucketBuf(pgr, capacity);
+    BucketBuf *bb = new BucketBuf(pgr);
     pgr.read_page(*bb, 1);
     Bucket bucket(bb); 
 
@@ -146,6 +147,7 @@ void clear_bucket()
     pgr.free_pages(bb->get_page(), 1);
 }
 
+#if 0
 uint32_t copy_bucket()
 {
     Pager pgr;
@@ -198,9 +200,9 @@ int main(int argc, char **argv)
     filename = argv[1];
     keyval = argv[2];
 
-    if (argc >= 5)
-        delspan = atoi(argv[4]);
-    assert(delspan > 0);
+    //if (argc >= 4)
+    //    delspan = atoi(argv[3]);
+    //assert(delspan > 0);
     
     if (FileIO::exists(filename))
         FileIO::unlink(filename);
@@ -221,6 +223,11 @@ int main(int argc, char **argv)
     */
 
     write_bucket();
+    iter_bucket();
+    del_bucket();
+    iter_bucket();
+    //clear_bucket();
+    ////iter_bucket();
 
     return 0;
 }

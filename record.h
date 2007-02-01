@@ -42,19 +42,19 @@ namespace ST
         void set_valuesize(uint32_t size) { m_valuesize = size; }
         uint32_t get_valuesize() const { return m_valuesize; }
 
-        void set_key(void *key) { m_key = key; }
-        uint8_t *get_key() { return m_key; }
+        void set_key(const void *key) { m_key = (uint8_t *)key; }
+        const void *get_key() { return (void *)m_key; }
 
-        void set_value(void *value) { m_value = value; }
-        uint8_t *get_value() { return m_value; }
+        void set_value(const void *value) { m_value = (uint8_t *)value; }
+        const void *get_value() { return (void *)m_value; }
 
         uint16_t get_size() const { return m_size; }
 
     private:
         int m_type;
         uint16_t m_size;
-        void *m_key;
-        void *m_value;
+        const uint8_t *m_key;
+        const uint8_t *m_value;
         uint32_t m_hash32;
         uint32_t m_overflow_next;
         uint32_t m_keysize;

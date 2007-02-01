@@ -158,6 +158,10 @@ void Bucket::copy_quick(BucketIter &ito, BucketIter &ifrom)
         *m_head = *tobuf;
     assert(tobuf->count_records() == tobuf->get_size());
 }
+#endif
+
+#define FULL 0.90
+#define MERGE_THRESHOLD 0.20
 
 //Move records from cur to prev. 
 //prev is set to cur, cur is advanced, and the process continues 
@@ -166,35 +170,24 @@ void Bucket::copy_quick(BucketIter &ito, BucketIter &ifrom)
 static void bucket_compact(BucketBuf *start)
 {
     Pager &pgr = start->pager();
-    uint16_t maxrec = start->max_records();
-    BucketBuf tmp1(pgr, maxrec);
-    BucketBuf tmp2(pgr, maxrec);
+    BucketBuf tmp1(pgr);
+    BucketBuf tmp2(pgr);
     BucketBuf *cur, *prev;
+    Record rcur;
 
     prev = start;
     cur = &tmp1;
     while (prev->get_bucket_next())
     {
-        prev->iter_rewind();
-        cur->iter_rewind();
-
         pgr.read_page(*cur, prev->get_bucket_next()); 
+        cur->first_record(rcur);
 
-        //move over available records from cur to prev
-        while (cur->iter_next() && prev->free_next())
+        //move over all records from cur to prev that fit cleanly
+        while (!prev->full() && cur->next_record(rcur))
         {
-            prev->record() = cur->record();
-            prev->set_size(prev->get_size() + 1);
-            cur->remove_record(cur->record());
+            if (prev->insert_record(rcur))
+                cur->remove_record(rcur);
         }
-
-        //one or both of these conditions should be true..
-        //there should never be any leftovers in cur if prev isn't full
-        assert(cur->empty() || prev->full());
-
-        //
-        assert(cur->count_records() == cur->get_size() && 
-                prev->count_records() == prev->get_size());
 
         //1. if current bucket empty, remove it from the file
         if (cur->empty())
@@ -204,8 +197,8 @@ static void bucket_compact(BucketBuf *start)
         }
         pgr.write_page(*prev);
 
-        //2. if filled up prev bucket completely, move prev forward
-        if (prev->full())
+        //2. if filled up prev bucket completely with what will fit, move prev forward
+        if (prev->full() || !cur->empty())
         {
             //in this case, cur was used up, and we must read ahead before the next pass.
             if (cur->empty())
@@ -230,41 +223,41 @@ static void bucket_compact(BucketBuf *start)
     }
 }
 
-#define MERGE_THRESHOLD 0.20
 
 //Remove the current record in iter
 //
 //1. The head bucket must always have records in it if there are overflow buckets
 //2. Buckets closer to the head should have more records
 //
-//If the load of a bucket drops below MERGE_THRESHOLD (method 1):
-//      1. if there is a next bucket, fill with records from the next overflow buckets
-//      2. if there is no next bucket (this is the tail bucket):
+//If the load of a bucket drops below MERGE_THRESHOLD:
+//      1. if load is 0%, unlink bucket unless it is the head 
+//      2. otherwise, if there is a next bucket, fill with records from the next overflow buckets till
+//         the bucket reaches FULL or all overflow buckets are traversed.
+//      3. if there is no next bucket (this is the tail bucket):
 //          a. if records are still present, leave the bucket alone
-//          b. if the bucket is not the head and there are no records present, remove the bucket
 //
 void Bucket::remove(BucketIter &iter, int cleanup) 
 {
-    BucketBuf *ibuck = iter.m_iter;
-    Record &irec = ibuck->record();
+    BucketBuf *ibuck = iter.m_biter;
+    Record &irec = iter.m_riter;
     Pager &pgr = m_head->pager();
-    BucketBuf tmp(pgr, m_head->max_records()); 
+    BucketBuf tmp(pgr); 
 
     if (!pgr.writeable())
         throw IOException("cannot remove from readonly pagefile", pgr.filename());
 
-    ibuck->remove_record(irec);
     if (!(cleanup & KEEPOVERFLOW) && irec.get_overflow_next())
     {
         OverflowBuf obuf(pgr);
         pgr.read_page(obuf, irec.get_overflow_next());
         pgr.free_pages(obuf.get_page(), obuf.get_page_span());
     }
+    ibuck->remove_record(irec);
 
     //don't muckup the iterator unless told to
     if (!(cleanup & NOCLEAN))
     {
-        float load = (float)ibuck->get_size() / (float)ibuck->max_records(); 
+        float load = (float)ibuck->get_usedsize() / (float)ibuck->get_payloadsize(); 
 
         if (load == 0.0 && iter.m_pptr)
         {
@@ -313,12 +306,12 @@ void Bucket::clear()
 
     while (1)
     {
-        int i;
         Record rec;
-
-        for (i = 0; i < iter.max_records(); i++)
+        
+        iter.first_record(rec);
+        while (iter.next_record(rec))
         {
-            if (iter.get_record(rec, i) && rec.get_overflow_next())
+            if (rec.get_overflow_next())
             {
                 pgr.read_page(obuf, rec.get_overflow_next());
                 pgr.free_pages(obuf.get_page(), obuf.get_page_span());
@@ -340,7 +333,6 @@ void Bucket::compact()
 {
     bucket_compact(m_head);
 }
-#endif
 
 bool Bucket::empty()
 {
@@ -354,16 +346,16 @@ BucketIter Bucket::iter()
 }
 
 BucketIter::BucketIter(BucketBuf *iter): 
-    m_pptr(0), m_iter(iter), m_xtra(NULL)
+    m_pptr(0), m_xtra(NULL)
 {
     m_biter = new BucketBuf(*iter); 
-    m_iter->first_record(m_riter);
+    m_biter->first_record(m_riter);
 }
 
 BucketIter::BucketIter() 
 {
     m_pptr = 0;
-    m_iter = NULL; 
+    m_biter = NULL; 
     m_xtra = NULL; 
 }
 
@@ -397,7 +389,7 @@ void BucketIter::copy(const BucketIter &iter)
 
 BucketIter::~BucketIter()
 {
-    delete m_iter;
+    delete m_biter;
     delete m_xtra;
 }
 
@@ -475,8 +467,8 @@ bool BucketIter::next()
     if (m_biter->next_record(m_riter))
         return true;
    
-    //no, check next bucket overflow
-    if (m_biter->get_bucket_next())
+    //no, find next non-empty bucket
+    while (m_biter->get_bucket_next())
     {
         m_pptr = m_biter->get_page();
         m_biter->pager().read_page(*m_biter, m_biter->get_bucket_next());
