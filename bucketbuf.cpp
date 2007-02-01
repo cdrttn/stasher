@@ -139,12 +139,12 @@ bool BucketBuf::insert_record(Record &rec)
     assert(rec.get_type() != Record::RECORD_EMPTY);
 
     //no room for data
-    if (rec.get_size() > get_size())
+    if (rec.get_size() > get_freesize())
         return false;
 
     //position of new data
-    set_size(get_size() - rec.get_size());
-    rptr = get_payload() + get_size();
+    set_freesize(get_freesize() - rec.get_size());
+    rptr = get_payload() + get_freesize();
 
     rec.copyto(rptr);
 
@@ -163,9 +163,9 @@ void BucketBuf::remove_record(Record &rec)
     assert(rptr >= get_payload() && rptr < get_payload() + get_payloadsize());
 
     rec.copyfrom(rptr);
-    osize = get_size();
-    set_size(osize + rec.get_size());
-    dest = get_payload() + get_size();
+    osize = get_freesize();
+    set_freesize(osize + rec.get_size());
+    dest = get_payload() + get_freesize();
     start = get_payload() + osize;
 
     //no need to move the first element
@@ -177,7 +177,7 @@ void BucketBuf::remove_record(Record &rec)
 
 void BucketBuf::first_record(Record &rec)
 {
-    rec.m_recptr = get_payload() + get_size();
+    rec.m_recptr = get_payload() + get_freesize();
 }
 
 bool BucketBuf::next_record(Record &rec)

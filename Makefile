@@ -6,6 +6,7 @@ LDFLAGS = -lm
 
 OBJ = pager.o freecache.o fileio.o headerbuf.o bucketbuf.o bucket.o overflowbuf.o bucketarray.o hashfunc.o stasher.o
 bbOBJ = pager.o freecache.o fileio.o headerbuf.o bucketbuf.o 
+bOBJ = $(bbOBJ) bucket.o overflowbuf.o
 
 mem: test_mem.o $(OBJ)
 	$(CPP) -o mem test_mem.o $(OBJ) $(LDFLAGS)
@@ -16,8 +17,8 @@ stasher: test_stasher.o $(OBJ)
 bucketarray: test_bucketarray.o $(OBJ)
 	$(CPP) -o bucketarray test_bucketarray.o $(OBJ) $(LDFLAGS)
 
-bucket: test_bucket.o $(OBJ)
-	$(CPP) -o bucket test_bucket.o $(OBJ) $(LDFLAGS)
+bucket: test_bucket.o $(bOBJ)
+	$(CPP) -o bucket test_bucket.o $(bOBJ) $(LDFLAGS)
 
 bbuf: test_bucketbuf.o $(bbOBJ)
 	$(CPP) -o bbuf test_bucketbuf.o $(bbOBJ) $(LDFLAGS)

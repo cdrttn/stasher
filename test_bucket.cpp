@@ -13,7 +13,6 @@ using namespace std;
 
 #define END 6 // ^F char
 
-int capacity = 8;
 int delspan = 15;
 char *filename = NULL;
 char *keyval = NULL;
@@ -38,7 +37,7 @@ void write_bucket()
     pgr.open(filename, true);
     printf("opened (write) -> %s, pages -> %d\n", pgr.filename().c_str(), pgr.length());
 
-    BucketBuf *bb = new BucketBuf(pgr, capacity);
+    BucketBuf *bb = new BucketBuf(pgr);
     bb->allocate();
     bb->clear();
     bb->create();
@@ -62,6 +61,7 @@ void write_bucket()
     fclose(fp);
 }
 
+#if 0
 void iter_bucket(uint32_t start = 1)
 {
     Pager pgr;
@@ -186,20 +186,17 @@ uint32_t copy_bucket()
     
     return newptr;
 }
+#endif
 
 int main(int argc, char **argv)
 {
     if (argc < 2)
     {
-        puts("bucket file keyval [capacity] [delspan]");
+        puts("bucket file keyval [delspan]");
         return 0;
     }
     filename = argv[1];
     keyval = argv[2];
-
-    if (argc >= 4)
-        capacity = atoi(argv[3]);
-    assert(capacity > 0);
 
     if (argc >= 5)
         delspan = atoi(argv[4]);
@@ -209,7 +206,7 @@ int main(int argc, char **argv)
         FileIO::unlink(filename);
    
     //srandom(time(NULL));
-    
+    /*    
     write_bucket();
     iter_bucket();
     del_bucket();
@@ -221,6 +218,9 @@ int main(int argc, char **argv)
     uint32_t newptr = copy_bucket();
     fprintf(stderr, "\nAfter Copy\n");
     iter_bucket(newptr);
+    */
+
+    write_bucket();
 
     return 0;
 }

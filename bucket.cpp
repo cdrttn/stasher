@@ -43,7 +43,9 @@ void Bucket::append(uint32_t hash32, const void *key, uint32_t ksize,
 {
     Pager &pgr = m_head->pager();
     BucketBuf *iter;
-    BucketBuf tmp(pgr, m_head->max_records());
+    BucketBuf tmp(pgr); 
+    uint32_t ptr; 
+    Record rec;
 
     if (!pgr.writeable())
         throw IOException("cannot append to readonly pagefile", pgr.filename());
@@ -51,37 +53,33 @@ void Bucket::append(uint32_t hash32, const void *key, uint32_t ksize,
     tmp.allocate();
     iter = m_head;
 
+    rec.set_hash32(hash32);
+    rec.set_key(key); 
+    rec.set_keysize(ksize);
+    rec.set_value(value); 
+    rec.set_valuesize(vsize);
+    ptr = 0;
+
+    switch (rec.set_type(pgr.pagesize()))
+    {
+    case Record::RECORD_MEDIUM:
+        ptr = OverflowBuf::alloc_payload(pgr, value, vsize);
+        break;
+
+    case Record::RECORD_LARGE:
+        ptr = OverflowBuf::alloc_payload(pgr, key, ksize, value, vsize);
+        break;
+    }
+
+    rec.set_overflow_next(ptr);
+
     while (1)
     {
-        if (iter->get_size() < iter->max_records())
+        //compare the size of the record with with the free space in the bucket
+        if (rec.get_size() <= iter->get_freesize())
         {
-            uint32_t ptr; 
-            Record rec;
             if (!iter->insert_record(rec))
                 throw InvalidPageException("Invalid overflow bucket (can't insert record)", pgr.filename());
-
-            
-            rec.set_hash32(hash32);
-            switch (rec.fit_me(ksize, vsize))
-            {
-            case Record::RECORD_SMALL:
-                rec.set_payload(key, ksize, value, vsize);
-                rec.set_overflow_next(0);
-                break;
-
-            case Record::RECORD_MEDIUM:
-                rec.set_payload(key, ksize);
-                ptr = OverflowBuf::alloc_payload(pgr, value, vsize);
-                rec.set_overflow_next(ptr);
-                break;
-
-            case Record::RECORD_LARGE:
-                rec.set_keysize(0);
-                rec.set_valuesize(0);
-                ptr = OverflowBuf::alloc_payload(pgr, key, ksize, value, vsize);
-                rec.set_overflow_next(ptr);
-                break;
-            }
            
             pgr.write_page(*iter);
             
@@ -110,6 +108,8 @@ void Bucket::append(uint32_t hash32, const void *key, uint32_t ksize,
         }
     }
 }
+
+#if 0
 
 //directly copy a record from iter ifrom to the next available location
 //in iter ito, preserving overflow ptrs. append overflow buckets as
@@ -340,10 +340,11 @@ void Bucket::compact()
 {
     bucket_compact(m_head);
 }
+#endif
 
 bool Bucket::empty()
 {
-    return !m_head->get_size();
+    return m_head->empty();
 }
 
 BucketIter Bucket::iter()
@@ -355,8 +356,8 @@ BucketIter Bucket::iter()
 BucketIter::BucketIter(BucketBuf *iter): 
     m_pptr(0), m_iter(iter), m_xtra(NULL)
 {
-    m_iter = new BucketBuf(*iter); 
-    m_iter->iter_rewind();
+    m_biter = new BucketBuf(*iter); 
+    m_iter->first_record(m_riter);
 }
 
 BucketIter::BucketIter() 
@@ -380,13 +381,13 @@ BucketIter &BucketIter::operator=(const BucketIter &iter)
 void BucketIter::copy(const BucketIter &iter)  
 {
     m_pptr = iter.m_pptr;
-    if (iter.m_iter)
+    if (iter.m_biter)
     {
-        m_iter = new BucketBuf(*iter.m_iter);
-        m_iter->iter_rewind();
+        m_biter = new BucketBuf(*iter.m_biter);
+        m_biter->first_record(m_riter);
     }
     else 
-        m_iter = NULL;
+        m_biter = NULL;
 
     if (iter.m_xtra)
         m_xtra = new OverflowBuf(*iter.m_xtra);
@@ -403,18 +404,12 @@ BucketIter::~BucketIter()
 //get data for current record
 void BucketIter::get_key(buffer &key)
 {
-    Record &rec = m_iter->record();
-
-    switch (rec.get_type())
+    switch (m_riter.get_type())
     {
     case Record::RECORD_SMALL:
-        key.resize(rec.get_keysize());
-        memcpy(&key[0], rec.get_key(), rec.get_keysize());
-        break;
-
     case Record::RECORD_MEDIUM:
-        key.resize(rec.get_keysize());
-        memcpy(&key[0], rec.get_key(), rec.get_keysize());
+        key.resize(m_riter.get_keysize());
+        memcpy(&key[0], m_riter.get_key(), m_riter.get_keysize());
         break;
 
     case Record::RECORD_LARGE:
@@ -426,13 +421,11 @@ void BucketIter::get_key(buffer &key)
 
 void BucketIter::get_value(buffer &value)
 {
-    Record &rec = m_iter->record();
-
-    switch (rec.get_type())
+    switch (m_riter.get_type())
     {
     case Record::RECORD_SMALL:
-        value.resize(rec.get_valuesize());
-        memcpy(&value[0], rec.get_value(), rec.get_valuesize());
+        value.resize(m_riter.get_valuesize());
+        memcpy(&value[0], m_riter.get_value(), m_riter.get_valuesize());
         break;
 
     case Record::RECORD_MEDIUM:
@@ -449,8 +442,8 @@ void BucketIter::get_value(buffer &value)
 
 void BucketIter::load_overflow()
 {
-    Pager &pgr = m_iter->pager();
-    uint32_t optr = m_iter->record().get_overflow_next();
+    Pager &pgr = m_biter->pager();
+    uint32_t optr = m_riter.get_overflow_next();
 
     if (!m_xtra)
     {
@@ -473,25 +466,25 @@ void BucketIter::load_overflow()
 
 uint32_t BucketIter::get_hash32()
 {
-    return m_iter->record().get_hash32();
+    return m_riter.get_hash32();
 }
 
 bool BucketIter::next()
 {
     //does current bucket have another record in it?
-    if (m_iter->iter_next())
+    if (m_biter->next_record(m_riter))
         return true;
    
     //no, check next bucket overflow
-    if (m_iter->get_bucket_next())
+    if (m_biter->get_bucket_next())
     {
-        m_pptr = m_iter->get_page();
-        m_iter->pager().read_page(*m_iter, m_iter->get_bucket_next());
-        if (!m_iter->validate())
-            throw InvalidPageException("Invalid overflow bucket", m_iter->pager().filename());
+        m_pptr = m_biter->get_page();
+        m_biter->pager().read_page(*m_biter, m_biter->get_bucket_next());
+        if (!m_biter->validate())
+            throw InvalidPageException("Invalid overflow bucket", m_biter->pager().filename());
 
-        m_iter->iter_rewind();
-        if (m_iter->iter_next())
+        m_biter->first_record(m_riter);
+        if (m_biter->next_record(m_riter))
             return true;
     }
 

@@ -2,6 +2,7 @@
 #define _BUCKET_H_
 
 #include "data.h"
+#include "record.h"
 
 namespace ST
 {
@@ -35,7 +36,8 @@ namespace ST
         void copy(const BucketIter &iter);
         
         uint32_t m_pptr;
-        BucketBuf *m_iter; 
+        BucketBuf *m_biter; 
+        Record m_riter;
         OverflowBuf *m_xtra;
     };
 
@@ -62,10 +64,12 @@ namespace ST
 
         void append(uint32_t hash32, const void *key, uint32_t ksize, 
                 const void *value, uint32_t vsize);
+        /*
         void copy_quick(BucketIter &ito, BucketIter &ifrom);
         void remove(BucketIter &iter, int cleanup = 0);
         void compact();
         void clear(); 
+        */
         bool empty();
 
         BucketIter iter();
