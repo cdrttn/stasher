@@ -4,9 +4,13 @@ CPP = g++
 CFLAGS = -Wall -fno-inline -ggdb -DHAVE_STDINT -DCHECK_PAGES -D_LARGEFILE64_SOURCE=1 -DLARGEFILE_SOURCE=1 -D_FILE_OFFSET_BITS=64
 LDFLAGS = -lm 
 
-OBJ = pager.o freecache.o fileio.o headerbuf.o bucketbuf.o bucket.o overflowbuf.o bucketarray.o hashfunc.o stasher.o
+OBJ = pager.o freecache.o fileio.o headerbuf.o bucketbuf.o bucket.o overflow.o bucketarray.o hashfunc.o stasher.o
 bbOBJ = pager.o freecache.o fileio.o headerbuf.o bucketbuf.o 
-bOBJ = $(bbOBJ) bucket.o overflowbuf.o
+bOBJ = $(bbOBJ) bucket.o overflow.o
+oOBJ = $(bbOBJ) overflow.o
+
+oflo: test_overflow.o $(oOBJ)
+	$(CPP) -o oflo test_overflow.o $(oOBJ) $(LDFLAGS)
 
 mem: test_mem.o $(OBJ)
 	$(CPP) -o mem test_mem.o $(OBJ) $(LDFLAGS)

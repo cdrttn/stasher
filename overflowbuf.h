@@ -13,9 +13,9 @@ namespace ST
         static const uint8_t OVER_MARKER = 'D';
         enum
         {
-            OVER_KEY_SIZE = BASIC_END,
-            OVER_VALUE_SIZE = OVER_KEY_SIZE + 4,
-            OVER_END = OVER_VALUE_SIZE + 4
+            OVER_ITEM_COUNT = BASIC_END,
+            OVER_FREE_SIZE = OVER_ITEM_COUNT + 4,
+            OVER_END = OVER_FREE_SIZE + 2,
         };
 
     public:
@@ -30,26 +30,19 @@ namespace ST
         {
             set_type(OVER_MARKER);
             set_size(0);
+            set_freesize(0);
             set_next(0);
-            set_keysize(0);
-            set_valuesize(0);
+            set_itemcount(0);
         }
 
-        uint32_t get_keysize() const { return get_uint32(m_buf, OVER_KEY_SIZE); }
-        uint32_t get_valuesize() const { return get_uint32(m_buf, OVER_VALUE_SIZE); }
+        void set_itemcount(uint32_t ic) { set_uint32(m_buf, OVER_ITEM_COUNT, ic); }
+        uint32_t get_itemcount() const { return get_uint32(m_buf, OVER_ITEM_COUNT); }
 
-        void get_key(buffer &key) const;
-        void get_value(buffer &value) const;
-        uint32_t get_page_span() const { return m_pager.bytes_to_pages(m_metasize + get_keysize() + get_valuesize()); }
+        //amount of leftover space at the end of an allocation
+        void set_freesize(uint32_t fs) { set_uint16(m_buf, OVER_FREE_SIZE, fs); }
+        uint16_t get_freesize() const { return get_uint16(m_buf, OVER_FREE_SIZE); }
 
-        //allocate and copy key and value
-        static uint32_t alloc_payload(Pager &pgr, const void *value, uint32_t vsize);
-        static uint32_t alloc_payload(Pager &pgr, const void *key, uint32_t ksize,
-                const void *value, uint32_t vsize);
-       
-    private:
-        void set_valuesize(uint32_t size) { set_uint32(m_buf, OVER_VALUE_SIZE, size); }
-        void set_keysize(uint32_t size) { set_uint32(m_buf, OVER_KEY_SIZE, size); }
+        uint32_t get_page_span() const { return m_pager.bytes_to_pages(m_metasize + get_size()); }
     };
 }
 

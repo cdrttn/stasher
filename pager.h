@@ -29,6 +29,7 @@ namespace ST
         uint32_t get_page() const { return m_page; }
         void set_page(uint32_t page) { m_page = page; }
         uint16_t get_pagesize() const { return m_pagesize; }
+        uint16_t get_metasize() const { return m_metasize; }
         uint8_t *get_buf() { return m_buf; }
         uint8_t *get_payload() { return m_buf + m_metasize; }
         uint16_t get_payloadsize() const { return m_pagesize - m_metasize; }
