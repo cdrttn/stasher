@@ -32,11 +32,9 @@ namespace ST
             m_hashfunc = hash;
             m_mode = mode;
             m_pagesize = psz;
-            
             m_dupe = false;
             m_maxexp = MAXEXP_DEFAULT;
-            m_maxrec = 16;
-            m_capacity = 0; //use maxrec
+            m_maxrec = 0;
         }
 
         //use NULL for default function
@@ -62,20 +60,9 @@ namespace ST
         void set_bucket_max_chunk(uint16_t max);
         uint16_t get_bucket_max_chunk() const { return 1 << m_maxexp; }
 
-        //max_records is the maximum number of records that can be stored in
-        //a single bucket. Given that a bucket is the size of a page, the
-        //size of a single record is around page_size / max_records. Note
-        //that this is only an estimate; the actual size will be less because of
-        //page and record metadata.
+        //max_records is an estimate of the number of records that fit in the page
         void set_bucket_max_records(uint16_t recs) { m_maxrec = recs; }
         uint16_t get_bucket_max_records() const { return m_maxrec; }
-
-        //capacity tells Stasher when to increase or shrink the number of 
-        //addressable buckets by performing the linear hash split or join 
-        //operations. The default is the same as max_records; however it can
-        //be set higher or lower for space/time tradeoff.
-        void set_bucket_capacity(uint16_t capacity) { m_capacity = capacity; }
-        uint16_t get_bucket_capacity() const { return m_capacity; }
 
     private:
         bool m_dupe;
@@ -86,7 +73,6 @@ namespace ST
         //bucket config
         uint8_t m_maxexp;
         uint16_t m_maxrec;
-        uint16_t m_capacity;
     };
 
     class Stasher

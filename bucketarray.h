@@ -17,7 +17,7 @@ namespace ST
         BucketArray(HashHeaderBuf &hhb);
         ~BucketArray();
 
-        bool get(Bucket &bucket, uint32_t index);
+        void get(Bucket &bucket, uint32_t index);
         void resize(uint32_t size);
         void append(Bucket &bucket);
         void last(Bucket &bucket);

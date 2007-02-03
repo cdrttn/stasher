@@ -50,6 +50,14 @@ namespace ST
             NOCLEAN = 1<<1,
             KEEPOVERFLOW = 1<<2
         };
+
+        enum
+        {
+            APPEND_OK = 0,
+            APPEND_OVERFLOW,
+            APPEND_CONFLICT
+        };
+
     public:
         Bucket();
         Bucket(BucketBuf *head);
@@ -58,13 +66,16 @@ namespace ST
         void set_head(BucketBuf *head);
         BucketBuf *get_head();
 
-        bool append(uint32_t hash32, const buffer &key, const buffer &value)
+        int append(uint32_t hash32, const buffer &key, const buffer &value, 
+                bool dupok = true, int maxrec = 0)
         {
-            return append(hash32, &key[0], key.size(), &value[0], value.size());
+            return append(hash32, &key[0], key.size(), &value[0], value.size(), 
+                    dupok, maxrec);
         }
 
-        bool append(uint32_t hash32, const void *key, uint32_t ksize, 
-                const void *value, uint32_t vsize);
+        int append(uint32_t hash32, const void *key, uint32_t ksize, 
+                const void *value, uint32_t vsize, bool dupok = true, 
+                int maxrec = 0);
         void remove(BucketIter &iter, int cleanup = 0);
         void compact();
         void clear(); 

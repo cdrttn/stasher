@@ -149,7 +149,7 @@ void BucketArray::find_chunk(uint32_t index, uint32_t &chunk, uint32_t &subindex
     }
 }
 
-bool BucketArray::get(Bucket &bucket, uint32_t index)
+void BucketArray::get(Bucket &bucket, uint32_t index)
 {
     BucketBuf *bb;
     uint32_t chunk, subindex;
@@ -168,10 +168,8 @@ bool BucketArray::get(Bucket &bucket, uint32_t index)
 
     //exceptions should be OK; caller's bucket instance owns the heap memory
     m_pager.read_page(*bb, m_heads[chunk] + subindex);
-    if (!bb->validate()) bb->create(); 
-    return bb->validate();
-
-    //XXX: bb->create() if invalid?
+    if (!bb->validate()) 
+        bb->create(); 
 }
 
 //FIXME: 
@@ -201,8 +199,8 @@ void BucketArray::resize(uint32_t size)
         Bucket bucket;
         for (tmp = size; tmp < length(); tmp++)
         {
-            if (get(bucket, tmp))
-                bucket.clear();
+            get(bucket, tmp);
+            bucket.clear();
         }
     }
     else if (size > 0 && m_heads.empty())

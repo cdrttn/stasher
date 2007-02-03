@@ -8,7 +8,7 @@
 #include <string.h>
 #include <math.h>
 
-#define HASHFUNC hash_func1
+#define HASHFUNC hash_func2
 
 using namespace std;
 using namespace ST; 
@@ -74,11 +74,6 @@ void Stasher::open(const string &filename, int flags, const StasherOpts &opts)
         m_hhb->set_maxexp(opts.m_maxexp);
         m_hhb->set_dupes(opts.m_dupe);
 
-        if (opts.m_capacity > 0)
-            m_hhb->set_capacity(opts.m_capacity);
-        else
-            m_hhb->set_capacity(opts.m_maxrec);
-            
         m_pager->write_page(*m_hhb, 1);
     }
 
@@ -228,8 +223,7 @@ bool Stasher::put(const void *key, uint32_t klen, const void *value, uint32_t vl
 {
     uint32_t hash32;
     Bucket bucket;
-    bool gotdup = false;
-    bool full = false;
+    int ret; 
 
     if (!klen || !vlen)
         return false;
@@ -237,35 +231,15 @@ bool Stasher::put(const void *key, uint32_t klen, const void *value, uint32_t vl
     hash32 = m_hashfunc(key, klen);
     m_array->get(bucket, address(hash32));
 
-    BucketIter iter = bucket.iter();
-
-    //XXX: hopefully, there are not too many overflow buckets, or this could be slow...
-    while (iter.next() and !gotdup)
-    {
-        if (do_hash(iter) == hash32)
-            gotdup = true;
-    }
-
-    if (!gotdup || !m_hhb->get_dupes())
-    {
-        full = bucket.append(hash32, key, klen, value, vlen);
-        if (full)
-            split_bucket();
-        
-        m_hhb->set_itemcount(m_hhb->get_itemcount() + 1);
-    }
-    else
+    ret = bucket.append(hash32, key, klen, value, vlen, 
+            m_hhb->get_dupes(), m_hhb->get_maxrec());
+    if (ret == Bucket::APPEND_OVERFLOW)
+        split_bucket();
+    else if (ret == Bucket::APPEND_CONFLICT)
         return false;
 
+    m_hhb->set_itemcount(m_hhb->get_itemcount() + 1);
 
-    if (!gotdup)
-    {
-        m_hhb->set_unique_hashes(m_hhb->get_unique_hashes() + 1);
-        if ((m_hhb->get_unique_hashes() % m_hhb->get_capacity()) == 0)
-            ;
-            //split_bucket();
-    }
-    
     return true;
 }
 
@@ -334,20 +308,11 @@ bool Stasher::remove(const void *key, uint32_t klen)
         }
     }
 
-    //FIXME: compact bucket
+    //FIXME: split bucket, compact bucket
     
     if (found)
         m_hhb->set_itemcount(m_hhb->get_itemcount() - 1);
 
-    if (allhash)
-    {
-        m_hhb->set_unique_hashes(m_hhb->get_unique_hashes() - 1);
-
-        if ((m_hhb->get_unique_hashes() % m_hhb->get_capacity()) == 0)
-            ;
-            //join_bucket();
-    }
-
-    return false;
+    return found;
 }
 

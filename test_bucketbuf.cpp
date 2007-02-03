@@ -30,6 +30,7 @@ void write_test(const char *file)
         rec.set_valuesize(strlen(value) + 1);
         rec.set_key((uint8_t *)key);
         rec.set_value((uint8_t *)value);
+        rec.set_type(pgr.pagesize());
 
         i++;
     } while (bb.insert_record(rec)); 

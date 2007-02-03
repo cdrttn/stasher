@@ -13,8 +13,8 @@ namespace ST
         static const uint8_t BUCKET_MARKER = 'T';
         enum
         {
-            BUCKET_NEXT_CHUNK = BASIC_END,
-            BUCKET_END = BUCKET_NEXT_CHUNK + 4
+            BUCKET_RECORDS = BASIC_END,
+            BUCKET_END = BUCKET_RECORDS + 2
         };
 
     public:
@@ -28,12 +28,14 @@ namespace ST
         {
             set_type(BUCKET_MARKER);
             set_size(get_payloadsize());
-            set_next(0);
+            set_records(0);
             set_bucket_next(0);
         }
         
-        void set_bucket_next(uint32_t ptr) { set_uint32(m_buf, BUCKET_NEXT_CHUNK, ptr); }
-        uint32_t get_bucket_next() const { return get_uint32(m_buf, BUCKET_NEXT_CHUNK); }
+        void set_records(uint16_t ptr) { set_uint16(m_buf, BUCKET_RECORDS, ptr); }
+        uint16_t get_records() const { return get_uint16(m_buf, BUCKET_RECORDS); }
+        void set_bucket_next(uint32_t ptr) { set_next(ptr); }
+        uint32_t get_bucket_next() const { return get_next(); }
         
         //size is the remaining bytes in this bucket
         bool empty() const { return get_size() == get_payloadsize(); }

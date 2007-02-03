@@ -38,15 +38,15 @@ BucketBuf *Bucket::get_head()
 }
 
 //Append a record to a bucket, adding overflows as neccesary. 
-bool Bucket::append(uint32_t hash32, const void *key, uint32_t ksize, 
-    const void *value, uint32_t vsize)
+int Bucket::append(uint32_t hash32, const void *key, uint32_t ksize, 
+    const void *value, uint32_t vsize, bool dupok, int maxrec)
 {
     Pager &pgr = m_head->pager();
     BucketBuf *iter;
     BucketBuf tmp(pgr); 
     uint32_t ptr; 
     Record rec;
-    bool full; //XXX testing
+    int ret;
 
     if (!pgr.writeable())
         throw IOException("cannot append to readonly pagefile", pgr.filename());
@@ -54,7 +54,7 @@ bool Bucket::append(uint32_t hash32, const void *key, uint32_t ksize,
     tmp.allocate();
     iter = m_head;
 
-    full = false;
+    ret = APPEND_OK;
     rec.set_hash32(hash32);
     rec.set_key(key); 
     rec.set_keysize(ksize);
@@ -77,14 +77,17 @@ bool Bucket::append(uint32_t hash32, const void *key, uint32_t ksize,
 
     while (1)
     {
+        //TODO: DUPS
         //compare the size of the record with with the free space in the bucket
         if (rec.get_size() <= iter->get_freesize())
         {
             if (!iter->insert_record(rec))
                 throw InvalidPageException("Invalid overflow bucket (can't insert record)", pgr.filename());
+
+            if (maxrec && iter->get_records() > maxrec)
+                ret = APPEND_OVERFLOW;
            
             pgr.write_page(*iter);
-            
             break;
         }
         
@@ -107,11 +110,11 @@ bool Bucket::append(uint32_t hash32, const void *key, uint32_t ksize,
             pgr.write_page(tmp, ptr);
 
             iter = &tmp;
-            full = true;
+            ret = APPEND_OVERFLOW;
         }
     }
 
-    return full;
+    return ret;
 }
 
 //directly copy a record from iter ifrom to the next available location
@@ -426,6 +429,8 @@ void BucketIter::get_value(buffer &value)
         m_xtra->get_value(value);
         break;
     }
+
+    assert (value.size() != 0);
 }
 
 void BucketIter::load_overflow()

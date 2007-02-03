@@ -69,6 +69,7 @@ void Record::copyto(uint8_t *buf)
             memcpy(buf, m_key, m_keysize);
             buf += m_keysize;
             memcpy(buf, m_value, m_valuesize);
+            assert(m_value && m_valuesize);
             break;
 
         case RECORD_MEDIUM:
@@ -119,6 +120,7 @@ void Record::copyfrom(uint8_t *buf)
             m_size = RECORD_L_END; 
             break;
     }
+
 }
 
 uint16_t BucketBuf::count_records()
@@ -139,7 +141,7 @@ bool BucketBuf::insert_record(Record &rec)
 {
     uint8_t *rptr;
 
-    rec.set_type(get_pagesize());
+    //rec.set_type(get_pagesize());
     assert(rec.get_type() != Record::RECORD_EMPTY);
 
     //no room for data
@@ -148,6 +150,7 @@ bool BucketBuf::insert_record(Record &rec)
 
     //position of new data
     set_freesize(get_freesize() - rec.get_size());
+    set_records(get_records() + 1);
     rptr = get_payload() + get_freesize();
 
     rec.copyto(rptr);
@@ -169,6 +172,7 @@ void BucketBuf::remove_record(Record &rec)
     rec.copyfrom(rptr);
     osize = get_freesize();
     set_freesize(osize + rec.get_size());
+    set_records(get_records() - 1);
     dest = get_payload() + get_freesize();
     start = get_payload() + osize;
 
