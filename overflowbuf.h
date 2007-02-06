@@ -13,9 +13,9 @@ namespace ST
         static const uint8_t OVER_MARKER = 'D';
         enum
         {
-            OVER_ITEM_COUNT = BASIC_END,
-            OVER_FREE_SIZE = OVER_ITEM_COUNT + 4,
-            OVER_END = OVER_FREE_SIZE + 2,
+            OVER_FREESIZE = BASIC_END,
+            OVER_ITEM_COUNT = OVER_FREESIZE + 2,
+            OVER_END = OVER_ITEM_COUNT + 2,
         };
 
     public:
@@ -31,18 +31,23 @@ namespace ST
             set_type(OVER_MARKER);
             set_size(0);
             set_freesize(0);
+            set_extent(1);
             set_next(0);
             set_itemcount(0);
         }
 
-        void set_itemcount(uint32_t ic) { set_uint32(m_buf, OVER_ITEM_COUNT, ic); }
-        uint32_t get_itemcount() const { return get_uint32(m_buf, OVER_ITEM_COUNT); }
-
         //amount of leftover space at the end of an allocation
-        void set_freesize(uint32_t fs) { set_uint16(m_buf, OVER_FREE_SIZE, fs); }
-        uint16_t get_freesize() const { return get_uint16(m_buf, OVER_FREE_SIZE); }
+        void set_freesize(uint16_t fs) { set_uint16(m_buf, OVER_FREESIZE, fs); }
+        uint16_t get_freesize() const { return get_uint16(m_buf, OVER_FREESIZE); }
 
-        uint32_t get_page_span() const { return m_pager.bytes_to_pages(m_metasize + get_size()); }
+        void set_itemcount(uint16_t ic) { set_uint16(m_buf, OVER_ITEM_COUNT, ic); }
+        uint16_t get_itemcount() const { return get_uint16(m_buf, OVER_ITEM_COUNT); }
+
+        void set_extent(uint32_t ex) { set_size(ex); }
+        uint32_t get_extent() const { return get_size(); }
+
+
+        uint32_t get_page_span(uint32_t bigalloc) const { return m_pager.bytes_to_pages(m_metasize + bigalloc); }
     };
 }
 

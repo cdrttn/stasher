@@ -172,15 +172,6 @@ void BucketArray::get(Bucket &bucket, uint32_t index)
         bb->create(); 
 }
 
-//FIXME: 
-//bleh, linking the bucket chunks together causes problems for get()
-//and append()... bug is difficult to explain. Briefly, if a bucket is gotten,
-//then a new bucket appended, the bucket gotten may not have the new link
-//data generated due to the subsequent call to append(). The link structure is
-//corrupted when the unsync'd gotten bucket is written out.
-//
-//I'm thinking it would be best to dump the linked list and store bucket heads
-//in HashHeaderBuf ala HeaderBuf/FreeNode. It would be faster for loading, too.
 void BucketArray::resize(uint32_t size)
 {
     uint32_t oldchunk, newchunk, tmp;

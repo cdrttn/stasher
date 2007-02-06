@@ -21,9 +21,11 @@ namespace ST
         void add_item(const buffer &value) { add_item(&value[0], value.size()); }
         void remove_item();
         void rewind();
+        void clear();
 
     private:
         void check_incr(bool);
+        void start_iter(uint32_t page);
         void write_buffer(const uint8_t *data, size_t size); 
         void read_buffer(uint8_t *data, size_t size); 
 
@@ -32,6 +34,13 @@ namespace ST
         uint32_t m_pghead;
         OverflowBuf m_curpage;
         uint8_t *m_curbyte;
+        uint8_t *m_lastbyte;
+        uint32_t m_lastsize;
+        uint32_t m_toppage;
+        uint32_t m_prevpage;
+        uint32_t m_nextpage;
+        uint16_t m_maxitems;
+        uint16_t m_curitem;
     };
 };
 
