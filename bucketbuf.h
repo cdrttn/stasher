@@ -46,10 +46,14 @@ namespace ST
         uint16_t count_records();
 
         bool insert_record(Record &rec);
+        bool insert_dup(Record &rec, const void *data, uint32_t size);
+        void remove_dup(Record &rec);
+
         void remove_record(Record &rec);
 
         void first_record(Record &rec);
         bool next_record(Record &rec);
+        bool next_record_dup(Record &rec);
     };
     
 

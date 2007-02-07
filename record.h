@@ -15,16 +15,14 @@ namespace ST
             //large -> key and value overflow
             RECORD_EMPTY = 0,
             RECORD_SMALL,
+            RECORD_DUP,
             RECORD_MEDIUM,
             RECORD_LARGE
         };
 
     public:
         Record():
-            m_type(RECORD_EMPTY), m_size(0), m_key(NULL),
-            m_value(NULL), m_hash32(0),
-            m_overflow_next(0), m_keysize(0),
-            m_valuesize(0), m_recptr(NULL), m_recptr_save(NULL)
+            m_type(RECORD_EMPTY) 
         {}
 
         int get_type() const { return m_type; }  
@@ -45,11 +43,14 @@ namespace ST
         void set_key(const void *key) { m_key = (uint8_t *)key; }
         const void *get_key() { return (void *)m_key; }
 
-        void set_value(const void *value) { m_value = (uint8_t *)value; }
-        const void *get_value() { return (void *)m_value; }
+        void set_value(const void *value) { m_value = (const uint8_t *)value; }
+        const void *get_value() { return (const void *)m_value; }
 
         uint16_t get_size() const { return m_size; }
 
+        void first_value();
+        bool next_value();
+        
     private:
         int m_type;
         uint16_t m_size;
@@ -59,7 +60,6 @@ namespace ST
         uint32_t m_overflow_next;
         uint32_t m_keysize;
         uint32_t m_valuesize;
-
         uint8_t *m_recptr;
         uint8_t *m_recptr_save;
 

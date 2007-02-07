@@ -45,8 +45,18 @@ void write_test(const char *file)
 
     bb.first_record(rec);
     bb.next_record(rec);
-    bb.remove_record(rec);
+    char *d = "over value !!!";
+    bb.insert_dup(rec, d, strlen(d)+1);
+    bb.insert_dup(rec, d, strlen(d)+1);
 
+    bb.next_record(rec);
+    bb.next_record(rec);
+    bb.next_record(rec);
+    bb.insert_dup(rec, d, strlen(d)+1);
+    bb.insert_dup(rec, d, strlen(d)+1);
+    bb.insert_dup(rec, d, strlen(d)+1);
+    bb.insert_dup(rec, d, strlen(d)+1);
+    
     uint32_t pptr = pgr.alloc_pages(1);
     pgr.write_page(bb, pptr);
     pgr.close();
@@ -65,8 +75,12 @@ void read_test(const char *file)
     Record rec;
 
     bb.first_record(rec);
+    bb.next_record(rec);
+    rec.next_value();
+    bb.remove_dup(rec);
+    bb.first_record(rec);
 
-    while (bb.next_record(rec))
+    while (bb.next_record_dup(rec))
     {
         printf("%s -> %s\n", rec.get_key(), rec.get_value());
     }
