@@ -2,6 +2,7 @@
 #define _PAGER_H_
 
 #include "freecache.h"
+#include "lrucache.h"
 #include "fileio.h"
 #include <string.h>
 #include <string>
@@ -21,42 +22,52 @@ namespace ST
         friend class Pager;
 
         BasicBuf(Pager &pgr); 
-        BasicBuf(const BasicBuf &bbuf);
-        BasicBuf &operator=(const BasicBuf &bbuf);
 
         virtual ~BasicBuf();
 
         uint32_t get_page() const { return m_page; }
-        void set_page(uint32_t page) { m_page = page; }
-        uint16_t get_pagesize() const { return m_pagesize; }
+        uint16_t get_pagesize() const { return m_pager.pagesize(); }
         uint16_t get_metasize() const { return m_metasize; }
         uint8_t *get_buf() { return m_buf; }
         uint8_t *get_payload() { return m_buf + m_metasize; }
-        uint16_t get_payloadsize() const { return m_pagesize - m_metasize; }
+        uint16_t get_payloadsize() const { return get_pagesize() - m_metasize; }
 
-        bool is_dirty() const { return m_dirty; }
-        void set_dirty(bool dirty) { m_dirty = dirty; }
         Pager &pager() { return m_pager; }
-        void allocate();  
         void clear() { memset(m_buf, 0, m_pagesize); }
         void clear_payload() { memset(get_payload(), 0, get_payloadsize()); }
         bool allocated() const { return (m_buf != NULL); }
         virtual bool validate() { return true; }
+        virtual void create() {}
+        void make_dirty() { if (m_lrubuf) m_lrubuf->make_dirty(); }
 
     protected:
         BasicBuf(Pager &pgr, uint32_t metasize); 
-        void set_pagesize(uint16_t psz) { m_pagesize = psz; }
-        void set_buf(uint8_t *buf) { m_buf = buf; }
 
         Pager &m_pager;
         uint8_t *m_buf;    
-        uint32_t m_page;
-        uint16_t m_pagesize;
-        bool m_dirty;
         uint16_t m_metasize;
 
     private:
-        void copy(const BasicBuf &bbuf);
+        BasicBuf(const BasicBuf &bbuf);
+        BasicBuf &operator=(const BasicBuf &bbuf);
+        void set_lru(LRUNode *node) 
+        { 
+            m_page = node->pageno; 
+            m_lrubuf = node; 
+            m_buf = node->buf; 
+        }
+
+        LRUNode *get_lru() 
+        { 
+            LRUNode *tmp = m_lrubuf; 
+            m_page = 0; 
+            m_buf = NULL; 
+            m_lrunode = NULL; 
+            return tmp;
+        }
+
+        uint32_t m_page;
+        LRUNode *m_lrubuf;
     };
    
     //Page with simple metadata (type, size, next)
@@ -75,8 +86,6 @@ namespace ST
     public:
         PageBuf(Pager &pgr): BasicBuf(pgr, BASIC_END) {}
         virtual ~PageBuf() {} 
-        virtual bool validate() { return true; }
-        virtual void create() {}
 
         //basic header get/set
         uint8_t get_type() const { return get_uint8(m_buf, HEADER_TYPE); }
@@ -90,7 +99,6 @@ namespace ST
 
     protected:
         PageBuf(Pager &pgr, uint16_t metasize): BasicBuf(pgr, metasize) {}
-
     };
 
 
@@ -102,7 +110,6 @@ namespace ST
         enum
         {
             ALLOC_ENSURE = 1<<1,
-            ALLOC_CLEAR = ALLOC_ENSURE | 1<<2,
         };
 
         enum
@@ -114,39 +121,54 @@ namespace ST
         Pager(); 
         virtual ~Pager(); 
 
-        void open(const string &file, int flags = OPEN_WRITE, int mode = 0644, uint16_t pagesize = 0);
+        void open(const string &file, int flags = OPEN_WRITE, int mode = 0644, uint32_t maxcache = 512, uint16_t pagesize = 0);
+        void sync();
         void close();
 
-        void mem_alloc_page(BasicBuf &buf);
-        void mem_free_page(BasicBuf &buf);
-        bool read_page(BasicBuf &buf, uint32_t page); 
-        bool write_page(BasicBuf &buf, uint32_t page);
-        bool read_page(BasicBuf &buf) { return read_page(buf, buf.get_page()); }
-        bool write_page(BasicBuf &buf) { return write_page(buf, buf.get_page()); }
-       
-        //write a buffer page-aligned -> return pages written
-        uint32_t write_buf(const void *buf, uint32_t bytes, uint32_t page, uint32_t rel = 0);
-        bool read_buf(void *buf, uint32_t bytes, uint32_t page, uint32_t rel = 0);
-
-        //for following pointers. never touch header page.
+        void new_page(BasicBuf &buf, uint32_t page);
+        void new_page(BasicBuf &buf); //allocate memory and space in the file
+        void read_page(BasicBuf &buf, uint32_t page); 
+        void return_page(BasicBuf &buf);
+      
         bool deref_page(BasicBuf &buf, uint32_t page)
         {
-            if (page > 0)
-                return read_page(buf, page);
-
+            if (page)
+            {
+                read_page(buf, page);
+                return true;
+            }
             return false;
         }
-        
+       
+        void read_page_dirty(BasicBuf &buf, uint32_t page)
+        {
+            read_page(buf, page);
+            buf.make_dirty();
+        }
+
+        bool deref_page_dirty(BasicBuf &buf, uint32_t page)
+        {
+            if (page)
+            {
+                read_page_dirty(buf, page);
+                return true;
+            }
+            return false;
+        }
+
         // allocate count pages (bytes) on disk, return pointer
         uint32_t alloc_pages(uint32_t count, int flags = 0);
-        uint32_t alloc_bytes(uint32_t bytes, int flags = 0);
 
         // free count pages (bytes) starting at start
         void free_pages(uint32_t start, uint32_t count);
-        void free_bytes(uint32_t start, uint32_t bytes);
 
-        void clear_span(uint32_t page, uint32_t span);
-
+        void free_page(BasicBuf &buf)
+        {
+            uint32_t page = buf.get_page();
+            return_page(buf);
+            free_pages(page, 1);
+        }
+        
         //convert bytes to pages
         uint32_t bytes_to_pages(uint32_t bytes) const;
 
@@ -155,16 +177,19 @@ namespace ST
         uint16_t pagesize() const { return m_pagesize; }
         bool writeable() const { return m_write; }
 
-    protected:
+    private:
         int64_t physical(uint32_t page) { return (int64_t)m_pagesize * (int64_t)page; }
+        //void clear_span(uint32_t page, uint32_t span);
+        void load_free();
 
-    protected:
+    private:
         uint16_t m_pagesize;
         uint32_t m_pagecount;
         bool m_write; 
         bool m_opened;
         FileIO m_io;
         FreeCache m_free;
+        LRUCache m_lru;
         string m_filename;
 
     private:

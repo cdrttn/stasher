@@ -33,7 +33,7 @@ void write_test(const char *file)
         rec.set_type(pgr.pagesize());
 
         i++;
-    } while (bb.insert_record(rec)); 
+    } while (bb.insert_record(rec));
 
     bb.first_record(rec);
     i = 0;
@@ -56,6 +56,27 @@ void write_test(const char *file)
     bb.insert_dup(rec, d, strlen(d)+1);
     bb.insert_dup(rec, d, strlen(d)+1);
     bb.insert_dup(rec, d, strlen(d)+1);
+
+    bb.first_record(rec);
+    bb.next_record(rec);
+    bb.next_record(rec);
+    bb.next_record(rec);
+    const uint8_t *val;
+    uint16_t len;
+    
+    for (i=0,rec.first_value(val); i < 0 && rec.check_value(val, len); i++, bb.remove_dup(rec, val, len)) 
+        printf("value(%s), len(%d)\n", val, len);
+ 
+    char fugdup[256];
+    for (i=0; i < 5; i++)
+    {
+        sprintf(fugdup, "dodo dup %d", i);
+        bb.insert_dup(rec, fugdup, strlen(fugdup)+1);
+    }
+
+    for (i=0,rec.first_value(val); rec.check_value(val, len); i++)
+        if (i%2) rec.next_value(val, len);
+        else bb.remove_dup(rec, val, len);
     
     uint32_t pptr = pgr.alloc_pages(1);
     pgr.write_page(bb, pptr);
@@ -75,14 +96,14 @@ void read_test(const char *file)
     Record rec;
 
     bb.first_record(rec);
-    bb.next_record(rec);
-    rec.next_value();
-    bb.remove_dup(rec);
-    bb.first_record(rec);
-
-    while (bb.next_record_dup(rec))
+    while (bb.next_record(rec))
     {
-        printf("%s -> %s\n", rec.get_key(), rec.get_value());
+        const uint8_t *val;
+        uint16_t len;
+   
+        printf("%s\n", rec.get_key());
+        for (rec.first_value(val); rec.check_value(val, len); rec.next_value(val, len))
+            printf("  -> %s len(%d)\n", val, len);
     }
 
     pgr.close();

@@ -28,8 +28,8 @@ uint16_t HeaderBuf::check_header(const buffer &head)
         return 0;
     
     type = get_uint8(buf, PageBuf::HEADER_TYPE);
-    fileps = get_uint16(buf, HeaderBuf::HEADER_PAGESZ);
-    memcpy(magic, buf + HeaderBuf::HEADER_MAGIC, MAGIC_LEN);
+    fileps = get_uint16(buf, HEADER_PAGESZ);
+    memcpy(magic, buf + HEADER_MAGIC, MAGIC_LEN);
 
     if (type == MAGIC_TYPE && !memcmp(magic, MAGIC_CHECK, MAGIC_LEN))
         return fileps;
@@ -46,30 +46,32 @@ void HeaderBuf::create()
 
     //set the pagesize to be written to the file
     set_file_pagesize(get_pagesize());
+    set_file_pagecount(1);
 }
 
-//XXX: for get_freenode and scan_freenode the headerbuf (this) 
-//     needs to persist as long as the FreeNode persists 
-FreeNode *HeaderBuf::get_freenode(uint16_t index)
+bool HeaderBuf::add_freenode(uint32_t offset, uint32_t span)
 {
-    assert(index < max_freenodes());
+    uint8_t *ptr;
+   
+    if (get_size() == max_freenodes())
+        return false;
+    
+    ptr = get_payload() + get_size() * 8;
+
+    set_uint32(ptr, 0, offset);
+    set_uint32(ptr, 4, span);
+    incr();
+
+    return true;
+}
+
+void HeaderBuf::get_freenode(uint16_t index, uint32_t &offset, uint32_t &span)
+{
+    assert(index < get_size());
     
     uint8_t *ptr = get_payload() + index * 8;
-    return new FreeNode(ptr, this);            
-}
-
-//same as above, but return NULL if no node is present at index
-FreeNode *HeaderBuf::scan_freenode(uint16_t index)
-{
-    assert(index < max_freenodes());
-
-    uint8_t *ptr = get_payload() + index * 8;
-    uint64_t *check = (uint64_t *)ptr;
-
-    if (*check != 0)
-        return new FreeNode(ptr, this);
-
-    return NULL;
+    offset = get_uint32(ptr, 0);
+    span = get_uint32(ptr, 4);
 }
 
 string HeaderBuf::get_magic() const
@@ -79,28 +81,6 @@ string HeaderBuf::get_magic() const
     string ret(buf, MAGIC_LEN);
 
     return ret;
-}
-
-FreeNode *HeaderBuf::get_next_freenode()
-{
-    int index = max_freenodes() - 1;
-    uint64_t *p = (uint64_t *) get_payload();
-
-    while (index >= 0)
-    {
-        if (p[index] == 0)
-        {
-            FreeNode *node = get_freenode(index); 
-            node->set_offset(1);
-            node->set_span(1);
-            incr();
-            return node;
-        }
-
-        index--;
-    }
-   
-    return NULL;
 }
 
 uint16_t HeaderBuf::count_freenodes() 

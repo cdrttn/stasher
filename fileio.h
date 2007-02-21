@@ -33,7 +33,8 @@ namespace ST
         static void unlink(const string &path);
         static uint16_t getpagesize();
 
-        int get_fd() { return m_fd; }
+        void set_fd(int fd) { m_fd = fd; }
+        int get_fd() const { return m_fd; }
 
     private:
         int m_fd;

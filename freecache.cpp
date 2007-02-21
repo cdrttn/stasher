@@ -1,5 +1,6 @@
 #include "freecache.h"
 #include "headerbuf.h"
+#include <exception>
 #include <assert.h>
 
 using namespace ST;
@@ -10,47 +11,82 @@ FreeCache::~FreeCache()
     destroy();
 }
 
-void FreeCache::destroy()
+void FreeCache::load(Pager &pgr, uint32_t ptr)
 {
-    FREELIST::const_iterator fiter;
-    HEADERS::iterator hiter;
+    int i;
+    uint32_t next, offset, span;
+    HeaderBuf head(pgr);
 
-    for (fiter = m_freelist.begin(); fiter != m_freelist.end(); fiter++)
-        delete fiter->second;
+    pgr.read_page_dirty(head, ptr);
 
-    for (hiter = m_headers.begin(); hiter != m_headers.end(); hiter++)
+    do
     {
-        HeaderBuf *buf = *hiter;
-
-        puts("writing header ");
-        buf->pager().write_page(*buf);
-        delete buf;
-    }
-
-    m_offsets.clear();
-    m_freelist.clear();
-    m_headers.clear();
-}
-
-void FreeCache::add_header(HeaderBuf *buf)
-{
-    assert(buf->allocated());
-
-    m_headers.push_back(buf);
-
-    int max = buf->max_freenodes() - 1;
-    while (max >= 0)
-    {
-        FreeNode *item = buf->scan_freenode(max--);
-        if (item)
+        for (i = 0; i < head.get_size(); i++)
         {
-            puts("FOUND item");
-            pair<OFFSETS::iterator, bool> ret = m_offsets.insert(FREEITEM(item->get_offset(), item));
-            assert(ret.second != false);
-            m_freelist.insert(FREEITEM(item->get_span(), item));
+            head.get_freenode(i, offset, span);
+            add_free(offset, span);
+        }
+
+        next = head.get_next();
+        if (head.get_page() != ptr)
+            pgr.free_page(head);
+        else
+        {
+            head.set_size(0);
+            head.set_next(0);
+            head.clear_payload();
         }
     }
+    while (pgr.deref_page(head, next));
+}
 
+//XXX: if an exception is thrown during this function the file and cache are corrupted
+void FreeCache::sync(Pager &pgr, uint32_t ptr, int destroy)
+{
+    size_t len;
+    uint16_t maxfn;
+    uint32_t chunk = 0, clen;
+    HeaderBuf head(pgr);
+    FREELIST::const_iterator fiter;
+
+    //sync freelist to file using available pages. allocate needed pages first
+    pgr.read_page_dirty(head, ptr);
+    assert(head.get_size() == 0);
+    len = m_freelist.size();
+    maxfn = head.get_maxfreenodes();
+
+    if (len > maxfn)
+    {
+        len -= maxfn
+        clen = len / maxfn;
+        if (len % maxfn)
+            clen++;
+
+        //this might allocate an unneeded page if the allocation causes removal of a freenode
+        //no biggie, though
+        chunk = pgr.alloc_pages(clen);
+    }
+
+    for (fiter = m_freelist.begin(); fiter != m_freelist.end(); fiter++)
+    {
+        if (head.get_size() == head.max_freenodes())
+        {
+            assert(chunk);
+            head.set_next(chunk);
+            pgr.new_page(head, chunk++);
+        }
+       
+        head.add_freenode(fiter->second);
+        
+        if (destroy)
+            delete fiter->second;
+    }
+
+    if (destroy)
+    {
+        m_offsets.clear();
+        m_freelist.clear();
+    }
 }
 
 FreeNode *FreeCache::pop_free(uint32_t span)
@@ -86,13 +122,13 @@ void FreeCache::freelist_remove(FreeNode *item)
     {
         if (iter->second == item)
         {
-            puts("fl_remove found item");
             m_freelist.erase(iter);
             return;
         }
     }
 
-    puts("fl_remove NOT FOUND item ?");
+    //shouldn't reach this
+    terminate();
 }
 
 /*
@@ -101,12 +137,12 @@ void FreeCache::freelist_remove(FreeNode *item)
  * 2. if new offset + new span = next higher offset in m_offsets:
  *      a. remove next higher entry from m_offsets and m_freelist
  *      b. set new span += next higher offset entry's span
- *      c. remove next higher entry's FreeNode from the header (freenode.remove())
+ *      c. remove next higher entry's FreeNode 
  * 3. if next lower offset + next lower offset's span = new offset in m_offsets:
  *      a. remove next lower entry from m_offsets and m_freelist
  *      b. set new offset = next lower offset
  *      c. set new span += next lower offset's span
- *      d. remove next lower entry's FreeNode from the header (freenode.remove())
+ *      d. remove next lower entry's FreeNode 
  * 4. insert new item FreeNode into m_offsets and m_freelist
  */
 void FreeCache::push_free(FreeNode *item)
@@ -147,7 +183,7 @@ void FreeCache::push_free(FreeNode *item)
                 m_offsets.erase(after);
                 freelist_remove(other);
                 span += other->get_span();
-                other->remove();
+                delete other;
             }
         }
 
@@ -164,7 +200,7 @@ void FreeCache::push_free(FreeNode *item)
                 freelist_remove(other);
                 span += other->get_span();
                 offset = other->get_offset();
-                other->remove();
+                delete other;
             }
         }
     }
@@ -180,50 +216,13 @@ void FreeCache::push_free(FreeNode *item)
 FreeNode *FreeCache::add_free(uint32_t offset, uint32_t span)
 {
     HEADERS::iterator iter;
+    FreeNode *node;
 
     assert(offset > 0 && span > 0);
     assert(m_offsets.count(offset) == 0); 
+
+    node = new FreeNode(offset, span);
+    push_free(node);
     
-    for (iter = m_headers.begin(); iter != m_headers.end(); iter++)
-    {
-        HeaderBuf *buf = *iter;
-
-        if (buf->get_size() < buf->max_freenodes())
-        {
-            printf("FC cur freenodes -> %d, max freenodes -> %d\n", buf->get_size(), buf->max_freenodes());
-            FreeNode *node = buf->get_next_freenode();
-            node->set_offset(offset);
-            node->set_span(span);
-            push_free(node);
-
-            return node;
-        }
-    }
-
-    return NULL;
+    return node;
 }
-
-void FreeCache::test(uint32_t offset)
-{
-    OFFSETS::const_iterator iter = m_offsets.lower_bound(offset);
-    if (iter != m_offsets.end())
-    {
-        printf("lower bound -> %d\n", iter->first);
-        iter++;
-        if (iter != m_offsets.end())
-            printf("lower bound++ -> %d\n", iter->first);
-        else
-            puts("NO LB++");
-
-        iter--;
-        iter--;
-        if (iter != m_offsets.end())
-            printf("lower bound-- -> %d\n", iter->first);
-        else
-            puts("NO LB--");
-    } 
-}
-
-
-
-

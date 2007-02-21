@@ -13,6 +13,23 @@ using namespace std;
 using namespace ST;
 
 
+BasicBuf::BasicBuf(Pager &pgr): 
+    m_pager(pgr), m_buf(NULL), m_page(0), 
+    m_dirty(false), m_metasize(0)
+{
+}
+
+BasicBuf::BasicBuf(Pager &pgr, uint32_t metasize): 
+    m_pager(pgr), m_buf(NULL), m_page(0), 
+    m_dirty(false), m_metasize(metasize)
+{
+}
+
+BasicBuf::~BasicBuf()
+{
+    m_pager.mem_free_page(*this); 
+}
+
 Pager::Pager()
     : m_pagesize(0), m_pagecount(0), m_write(false), m_opened(false) 
 {
@@ -20,66 +37,14 @@ Pager::Pager()
 
 Pager::~Pager() 
 { 
-    close(); 
-}
-
-BasicBuf::BasicBuf(Pager &pgr): 
-    m_pager(pgr), m_buf(NULL), m_page(0), 
-    m_pagesize(pgr.pagesize()), m_dirty(false),
-    m_metasize(0)
-{
-}
-
-BasicBuf::BasicBuf(Pager &pgr, uint32_t metasize): 
-    m_pager(pgr), m_buf(NULL), m_page(0), 
-    m_pagesize(pgr.pagesize()), m_dirty(false),  
-    m_metasize(metasize)
-{
-}
-
-//XXX: copy operations buggy?
-// copy operations allocate a new buffer and copy over
-// avoid copying if possible
-BasicBuf::BasicBuf(const BasicBuf &bbuf):
-    m_pager(bbuf.m_pager), m_buf(NULL)
-{
-    copy(bbuf);
-}
-
-BasicBuf &BasicBuf::operator=(const BasicBuf &bbuf)
-{
-    assert(&m_pager == &bbuf.m_pager);
-    copy(bbuf);
-    return *this;
-}
-
-void BasicBuf::copy(const BasicBuf &bbuf)
-{
-    m_page = bbuf.m_page;
-    m_pagesize = bbuf.m_pagesize;
-    m_dirty = bbuf.m_dirty;
-    m_metasize = bbuf.m_metasize;
-
-    if (bbuf.m_buf)
+    catch
     {
-        allocate();
-        memcpy(m_buf, bbuf.m_buf, m_pagesize);
-    }
+        close(); 
+    } 
+    catch (...) {}
 }
 
-BasicBuf::~BasicBuf()
-{
-    if (allocated())
-        m_pager.mem_free_page(*this); 
-}
-
-void BasicBuf::allocate()
-{
-    if (!allocated())
-        m_pager.mem_alloc_page(*this);
-}
-
-void Pager::open(const string &file, int flags, int mode, uint16_t pagesize)
+void Pager::open(const string &file, int flags, int mode, uint32_t maxcache, uint16_t pagesize)
 {
     int oflags;
 
@@ -106,8 +71,6 @@ void Pager::open(const string &file, int flags, int mode, uint16_t pagesize)
     }
 
     m_io.open(file, oflags, mode);
-
-    HeaderBuf header(*this);
     
     if (strict)
     {
@@ -121,186 +84,93 @@ void Pager::open(const string &file, int flags, int mode, uint16_t pagesize)
             m_io.close();
             throw InvalidPageException("Invalid Header", file);
         }
-        
-        printf("read in pagesize -> %d\n", m_pagesize);
-        assert(!header.allocated());
-        header.set_pagesize(m_pagesize);
-
-        if (!read_page(header, 0) || !header.validate())
-        {
-            m_io.close();
-            throw InvalidPageException("Invalid Header", file);
-        }
-    }
-    else
-    {
-        //create() sets the file page size correctly
-        header.allocate();
-        header.clear();
-        header.create();
-        write_page(header, 0);
     }
 
+    //lru now owns fd
+    m_lru.init(m_io.get_fd(), m_pagesize, maxcache);
+    
+    HeaderBuf header(*this);
+    
+    //create() sets the file page size and initial page count
+    if (!strict)
+        new_page(header, 0);
 
-    //load free chunks
-    //FIXME: no error check
-    if (m_write)
-    {
-        do
-        {
-            m_free.add_header(new HeaderBuf(header));
-            printf("open freenodes -> %d, count freenodes-> %d, max freenodes -> %d\n", 
-                    header.get_size(), header.count_freenodes(), header.max_freenodes());
-        }
-        while (header.get_next() && read_page(header, header.get_next())); 
-    }
+    read_page(header, 0);
+    m_pagecount = header.get_file_pagecount();
+    return_page(header);
 
     m_opened = true;
     m_filename = file;
-    m_pagecount = m_io.size() / m_pagesize;
-    assert(m_io.size() == physical(m_pagecount));
+
+    if (m_write)
+        m_free.load(*this, 0);
 } 
 
-static int acount = 0;
 
 void Pager::close()
 {
+    if (!m_opened)
+        return false;
+    
     if (m_write)
-        m_free.destroy();
+    {
+        HeaderBuf header(*this);
+        read_page_dirty(header, 0);
+        header.set_file_pagecount(m_pagecount);
+        m_free.sync(*this, 0, FreeCache::DESTROY);
+    }
 
-    m_io.close();
+    m_lru.close();
     m_opened = false; 
-
-    printf("current alloc count -> %d\n", acount);
 }
 
-void Pager::mem_alloc_page(BasicBuf &buf)
+void Pager::sync()
 {
-    assert(!buf.allocated());
-    acount++;
-
-    uint8_t *data = new uint8_t[m_pagesize];
-    buf.set_buf(data);
-    buf.set_pagesize(m_pagesize);
-}
-
-void Pager::mem_free_page(BasicBuf &buf)
-{
-    uint8_t *data = buf.get_buf();
-    if (data)
+    if (m_write)
     {
-        acount--;
-
-        assert(buf.get_pagesize() == m_pagesize);
-        delete [] data;
-        buf.set_buf(NULL);
-    }
-}
-
-//XXX: exception instead of return code?
-bool Pager::read_page(BasicBuf &buf, uint32_t page) 
-{
-    if (!buf.allocated())
-        mem_alloc_page(buf);
-
-    assert(buf.get_pagesize() == m_pagesize);
-    
-    buf.set_page(page);
-
-    m_io.seek(physical(page));
-    if (m_io.read(buf.get_buf(), m_pagesize) != m_pagesize)
-        return false;
-
-    return true;
-}
-
-//XXX: exception instead of return code?
-bool Pager::write_page(BasicBuf &buf, uint32_t page) 
-{
-    if (!m_write)
-        throw IOException("file is readonly", m_filename);
-
-    assert(buf.get_pagesize() == m_pagesize);
-
-    m_io.seek(physical(page));
-    if (m_io.write(buf.get_buf(), m_pagesize) != m_pagesize)
-        return false;
-
-    if (page >= m_pagecount)
-        m_pagecount = page + 1;
-    
-    buf.set_page(page);
-    buf.set_dirty(false);
-
-#ifdef CHECK_PAGES
-    assert(m_io.size() == physical(m_pagecount));
-#endif
-
-    return true;
-}
-
-//write a buffer ensuring page alignment
-uint32_t Pager::write_buf(const void *buf, uint32_t bytes, uint32_t page, uint32_t rel)
-{
-    uint32_t pcount = bytes_to_pages(bytes + rel);
-    uint32_t btotal = pcount * m_pagesize;
-    uint16_t remainder = btotal - bytes - rel;
-
-    if (!m_write)
-        throw IOException("file is readonly", m_filename);
-
-    m_io.seek(physical(page) + rel);
-
-    if (m_io.write(buf, bytes) != bytes)
-        return 0;
-
-    if (remainder > 0)
-    {
-        buffer align(remainder, 0);
-        assert(align.size() == remainder);
-
-        if (m_io.write(&align[0], remainder) != remainder)
-            return 0;
+        HeaderBuf header(*this);
+        read_page_dirty(header, 0);
+        header.set_file_pagecount(m_pagecount);
+        m_free.sync(*this, 0);
     }
 
-    //update page count
-    uint32_t xtra = page;
-    if (bytes + rel > m_pagesize)
-        xtra += bytes_to_pages(rel + bytes - m_pagesize);
-
-    if (xtra >= m_pagecount)
-        m_pagecount = xtra + 1;
-
-#ifdef CHECK_PAGES
-    assert(m_io.size() == physical(m_pagecount));
-#endif
-
-    return pcount;
+    m_lru.sync();
 }
 
-//read bytes into buf starting at page
-bool Pager::read_buf(void *buf, uint32_t bytes, uint32_t page, uint32_t rel)
-{
-    m_io.seek(physical(page) + rel);
-
-    if (m_io.read(buf, bytes) != bytes)
-        return false;
-
-    return true;
-}
-
-//zero out a section in the file
-void Pager::clear_span(uint32_t page, uint32_t span)
+//create a new dirty page
+void Pager::new_page(BasicBuf &buf, uint32_t page)
 {
     if (!m_write)
         throw IOException("file is readonly", m_filename);
 
-    buffer zero(m_pagesize, 0);
-    assert(page > 0);
-    m_io.seek(physical(page));
-   
-    while (span-- >= 0)
-        m_io.write(&zero[0], m_pagesize);
+    return_page(buf);
+    buf.set_lru(m_lru.new_page(page));
+    buf.clear();
+    buf.create();
+    buf.make_dirty();
+}
+
+//allocate space in the file and create new single page
+void Pager::new_page(BasicBuf &buf)
+{
+    new_page(buf, alloc_pages(1));
+}
+
+void Pager::read_page(BasicBuf &buf, uint32_t page) 
+{
+    return_page(buf);
+    buf.set_lru(m_lru.get_page(page));
+}
+
+void Pager::return_page(BasicBuf &buf)
+{
+    LRUNode *node;
+
+    node = buf.get_lru();
+    if (!node)
+        return;
+
+    m_lru.put_page(node);
 }
 
 uint32_t Pager::alloc_pages(uint32_t count, int flags)
@@ -309,17 +179,15 @@ uint32_t Pager::alloc_pages(uint32_t count, int flags)
         throw IOException("file is readonly", m_filename);
 
     uint32_t offset;
-    FreeNode *node = m_free.pop_free(count);
+    auto_ptr<FreeNode *> node(m_free.pop_free(count));
 
     if (!node)
     {
         offset = m_pagecount;
+        m_pagecount += count;
 
         if (flags & ALLOC_ENSURE)
-        {
-            m_pagecount += count;
             m_io.truncate(physical(m_pagecount));
-        }
     }
     else
     {
@@ -331,94 +199,44 @@ uint32_t Pager::alloc_pages(uint32_t count, int flags)
             //move the remaining free space down
             node->set_offset(offset + count);
             node->set_span(node->get_span() - count);
-            m_free.push_free(node);
+            m_free.push_free(node.release());
         }
-        else
-            node->remove(); //used up all of freenode's space, so delete it
-
-        if (flags & ALLOC_CLEAR)
-            clear_span(offset, count);
-
-        //XXX: sync header table?
+        //else: used up all of freenode's space. 
     }
-
-#ifdef CHECK_PAGES
-    assert(m_io.size() == physical(m_pagecount));
-#endif
     
     return offset;
 }
 
-uint32_t Pager::alloc_bytes(uint32_t bytes, int flags)
-{
-    return alloc_pages(bytes_to_pages(bytes), flags);
-}
-
 void Pager::free_pages(uint32_t start, uint32_t count)
 {
+    FreeNode *node;
+
     if (!m_write)
         throw IOException("file is readonly", m_filename);
 
     assert(start > 0);
 
+    m_lru.clear_extent(start, count);
+    
     //add the free range to check for merges
-    FreeNode *node = m_free.add_free(start, count);
-
-    //FIXME: free chunks are never removed...
-    //XXX: should freecache append free chunks instead of pager?
-    if (!node)
-    {
-        uint32_t ptr = alloc_pages(1);
-        HeaderBuf header(*this);
-        HeaderBuf *last = m_free.headers().back();
-       
-        //If the file becomes excessively large and fragmented,
-        //free pages will be ignored, unfortunetly.
-        if (m_free.headers().size() >= MAX_FREECHUNKS)
-            return;
-
-        assert(last->get_next() == 0);
-
-        header.allocate();
-        header.clear();
-        header.create();
-        write_page(header, ptr);
-        last->set_next(ptr);
-        write_page(*last);
-
-        m_free.add_header(new HeaderBuf(header));
-        node = m_free.add_free(start, count);
-        assert(node != NULL);
-
-        printf("tacked on new freechunk -> %d total\n", m_free.headers().size());
-    }
+    node = m_free.add_free(start, count);
 
     //truncate and remove node from free cache and header table
     if (node->get_offset() + node->get_span() >= m_pagecount)
     {
         m_pagecount = node->get_offset();
         m_free.pop_free(node);
-        node->remove();
+        delete node; 
 
         m_io.truncate(physical(m_pagecount));
     }
-
-    //XXX: sync header table?
-    
-#ifdef CHECK_PAGES
-    assert(m_io.size() == physical(m_pagecount));
-#endif
-}
-
-void Pager::free_bytes(uint32_t start, uint32_t bytes)
-{
-    free_pages(start, bytes_to_pages(bytes));
 }
 
 uint32_t Pager::bytes_to_pages(uint32_t bytes) const
 {
-    double pages = (double)bytes / (double)m_pagesize;
-
-    return (uint32_t)ceil(pages);
+    uint32_t pages = bytes / m_pagesize;
+    if (bytes % m_pagesize)
+        pages++;
+    return pages;
 }
 

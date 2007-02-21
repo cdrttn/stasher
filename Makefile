@@ -5,9 +5,13 @@ CFLAGS = -Wall -fno-inline -ggdb -DHAVE_STDINT -DCHECK_PAGES -D_LARGEFILE64_SOUR
 LDFLAGS = -lm 
 
 OBJ = pager.o freecache.o fileio.o headerbuf.o bucketbuf.o bucket.o overflow.o bucketarray.o hashfunc.o stasher.o
+lruOBJ = lrucache.o fileio.o
 bbOBJ = pager.o freecache.o fileio.o headerbuf.o bucketbuf.o 
 bOBJ = $(bbOBJ) bucket.o overflow.o
 oOBJ = $(bbOBJ) overflow.o
+
+lru: test_lru.o $(lruOBJ)
+	$(CPP) -o lru test_lru.o $(lruOBJ) $(LDFLAGS)
 
 oflo: test_overflow.o $(oOBJ)
 	$(CPP) -o oflo test_overflow.o $(oOBJ) $(LDFLAGS)

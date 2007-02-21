@@ -21,30 +21,27 @@ enum
     RECORD_L_END = 9
 };
 
-void Record::first_value()
+void Record::first_value(const uint8_t *&value)
 {
-    if (!m_recptr_save || m_type != RECORD_DUP)
-        return;
-
-    m_value = m_recptr_save + RECORD_S_SIZE + m_keysize;
+    value = m_value;
 }
 
-bool Record::next_value()
+void Record::next_value(const uint8_t *&value, uint16_t len)
 {
-    uint8_t *start = m_recptr_save + RECORD_S_SIZE + m_keysize;
+    value += len;
+}
 
-    if (!m_recptr_save || 
-            m_type != RECORD_DUP || 
-            m_value > start &&
-            m_value + m_valuesize >= m_recptr_save + m_size)
-        return false;
+bool Record::check_value(const uint8_t *&value, uint16_t &len)
+{
+    if (value < m_value + m_valuesize)
+    {
+        len = get_uint16(value, 0);
+        value += 2;
 
-    if (m_value > start)
-        m_value += m_valuesize;
-    m_valuesize = get_uint16(m_value, 0);
-    m_value += 2;
+        return true;
+    }
 
-    return true;
+    return false;
 }
 
 int Record::set_type(uint16_t pgsz) 
@@ -69,7 +66,7 @@ int Record::set_type(uint16_t pgsz)
     else
     {
         m_type = RECORD_SMALL; //Clean fit
-        m_size = RECORD_S_SIZE + m_keysize + m_valuesize;
+        m_size = RECORD_S_SIZE + m_keysize + m_valuesize + 2;
     }
 
     assert(m_type != RECORD_EMPTY);
@@ -80,26 +77,37 @@ int Record::set_type(uint16_t pgsz)
 
 void Record::copyto(uint8_t *buf)
 {
-    buf[RECORD_TYPE] = m_type;
+
+    if (m_recptr_save)
+    {
+        memcpy(buf, m_recptr_save, m_size);
+        return;
+    }
    
-    // The caller is expected to allocate overflow pages prior to calling copyto()
+    // Create new record. The caller is expected to allocate overflow pages prior to calling copyto()
+
+    buf[RECORD_TYPE] = m_type;
     
     switch (m_type)
     {
-        case RECORD_DUP:
         case RECORD_SMALL:
-            assert(m_value && m_valuesize);
-
             // keysize and key
             set_uint16(buf, RECORD_S_KEYSIZE, m_keysize);
             buf += RECORD_S_KEYSIZE + 2;
             memcpy(buf, m_key, m_keysize);
             buf += m_keysize;
 
-            // valuesize / total valuesize and value / valuelist
-            set_uint16(buf, 0, m_valuesize);
-            buf += 2;
-            memcpy(buf, m_value, m_valuesize);
+            // total valuesize, valuesize, first value
+            if (m_valuesize)
+            {
+                set_uint16(buf, 0, m_valuesize + 2);
+                set_uint16(buf, 2, m_valuesize);
+                buf += 4;
+                memcpy(buf, m_value, m_valuesize);
+            }
+            else
+                set_uint16(buf, 0, 0); // no values
+
             break;
 
         case RECORD_MEDIUM:
@@ -132,7 +140,6 @@ void Record::copyfrom(uint8_t *buf)
   
     switch (m_type)
     {
-        case RECORD_DUP:
         case RECORD_SMALL:
             //keysize and key
             m_keysize = get_uint16(buf, RECORD_S_KEYSIZE);
@@ -205,26 +212,28 @@ bool BucketBuf::insert_record(Record &rec)
     return true;
 }
 
-void BucketBuf::remove_dup(Record &rec)
+void BucketBuf::remove_dup(Record &rec, const uint8_t *&value, uint16_t len)
 {
-    uint8_t *dest, *src, *tsz;
+    uint8_t *dest, *src, *tsz; 
+    uint8_t *dptr; 
+    uint16_t dsize;
 
-    if (!rec.m_valuesize)
-        return;
-    
-    rec.m_value -= 2;
+    dsize = len + 2;
+    dptr = (uint8_t *)value - 2;
+    tsz = (uint8_t *)rec.m_value - 2;
     src = get_payload() + get_freesize();
-    dest = src + rec.m_valuesize + 2;
-    set_freesize(get_freesize() + rec.m_valuesize + 2);
-    memmove(dest, src, rec.m_value - src);
+    dest = src + dsize;
 
-    tsz = rec.m_recptr_save + RECORD_S_SIZE + rec.m_keysize;
-    set_uint16(tsz, 0, get_uint16(tsz, 0) - rec.m_valuesize + 2);
-    rec.m_size -= rec.m_valuesize + 2;
+    set_freesize(get_freesize() + dsize);
+    set_uint16(tsz, 0, get_uint16(tsz, 0) - dsize);
+    rec.m_recptr_save += dsize;
+    rec.m_value += dsize;
+    rec.m_size -= dsize;
+    rec.m_valuesize -= dsize;
+    value += len;
 
-    rec.m_recptr_save += rec.m_valuesize + 2;
-    rec.m_recptr += rec.m_valuesize + 2;
-    rec.m_valuesize = 0;
+    memmove(dest, src, dptr - src);
+    memset(src, 0, dsize);
 }
 
 bool BucketBuf::insert_dup(Record &rec, const void *data, uint32_t size)
@@ -234,14 +243,9 @@ bool BucketBuf::insert_dup(Record &rec, const void *data, uint32_t size)
     uint16_t fill, rsize;
 
     fill = get_pagesize() / MINFILL; 
-    assert(rec.get_type() == Record::RECORD_SMALL || rec.get_type() == Record::RECORD_DUP);
+    assert(rec.get_type() == Record::RECORD_SMALL);
   
-    //to convert a small record to a dup record, an extra 2 bytes for the first value size
-    //will be required in addition to the 2 bytes for the new value size
-    if (rec.get_type() == Record::RECORD_SMALL)
-        rsize = size + 4;
-    else
-        rsize = size + 2;
+    rsize = size + 2;
 
     //ensure that the record will not become too large
     if (rsize > get_freesize() || rec.get_size() + rsize > fill)
@@ -260,6 +264,7 @@ bool BucketBuf::insert_dup(Record &rec, const void *data, uint32_t size)
     rptr = rec.m_recptr_save + rec.get_size() - vsz;
     vlen = rptr - 2;
 
+    /*
     //convert SMALL -> DUP
     if (rec.get_type() == Record::RECORD_SMALL)
     {
@@ -269,6 +274,7 @@ bool BucketBuf::insert_dup(Record &rec, const void *data, uint32_t size)
         //to account for the new size metadata
         vsz += 2;
     }
+    */
 
     set_uint16(vlen, 0, vsz + size + 2);
 
@@ -324,23 +330,3 @@ bool BucketBuf::next_record(Record &rec)
 
     return true;
 }
-
-bool BucketBuf::next_record_dup(Record &rec)
-{
-    bool ret;
-
-    if (!rec.m_recptr_save || 
-            rec.get_type() != Record::RECORD_DUP || 
-            !rec.next_value())
-    {
-        ret = next_record(rec);
-
-        if (ret && rec.get_type() == Record::RECORD_DUP)
-            rec.next_value();
-
-        return ret;
-    }
-
-    return true;
-}
-

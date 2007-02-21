@@ -15,14 +15,19 @@ namespace ST
             //large -> key and value overflow
             RECORD_EMPTY = 0,
             RECORD_SMALL,
-            RECORD_DUP,
             RECORD_MEDIUM,
             RECORD_LARGE
         };
 
     public:
         Record():
-            m_type(RECORD_EMPTY) 
+            m_type(RECORD_EMPTY),
+            m_size(0), m_key(0),
+            m_value(0), m_hash32(0),
+            m_overflow_next(0),
+            m_keysize(0), m_valuesize(0),
+            m_recptr(NULL),
+            m_recptr_save(NULL)
         {}
 
         int get_type() const { return m_type; }  
@@ -48,8 +53,9 @@ namespace ST
 
         uint16_t get_size() const { return m_size; }
 
-        void first_value();
-        bool next_value();
+        void first_value(const uint8_t *&value);
+        bool check_value(const uint8_t *&value, uint16_t &len);
+        void next_value(const uint8_t *&value, uint16_t len);
         
     private:
         int m_type;
