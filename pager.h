@@ -25,48 +25,39 @@ namespace ST
 
         virtual ~BasicBuf();
 
-        uint32_t get_page() const { return m_page; }
-        uint16_t get_pagesize() const { return m_pager.pagesize(); }
+        uint16_t get_pagesize() const;
         uint16_t get_metasize() const { return m_metasize; }
-        uint8_t *get_buf() { return m_buf; }
-        uint8_t *get_payload() { return m_buf + m_metasize; }
+        uint8_t *get_payload() { return get_buf() + m_metasize; }
         uint16_t get_payloadsize() const { return get_pagesize() - m_metasize; }
 
         Pager &pager() { return m_pager; }
-        void clear() { memset(m_buf, 0, m_pagesize); }
+        void clear() { memset(get_buf(), 0, get_pagesize()); }
         void clear_payload() { memset(get_payload(), 0, get_payloadsize()); }
-        bool allocated() const { return (m_buf != NULL); }
+        bool allocated() const { return (get_buf() != NULL); }
         virtual bool validate() { return true; }
         virtual void create() {}
         void make_dirty() { if (m_lrubuf) m_lrubuf->make_dirty(); }
+        uint8_t *get_buf() { return m_lrubuf? m_lrubuf->get_buf() : NULL; }
+        const uint8_t *get_buf() const { return m_lrubuf? m_lrubuf->get_buf() : NULL; }
+        uint32_t get_page() const { return m_lrubuf? m_lrubuf->get_pageno() : 0; }
 
     protected:
         BasicBuf(Pager &pgr, uint32_t metasize); 
 
         Pager &m_pager;
-        uint8_t *m_buf;    
         uint16_t m_metasize;
 
     private:
         BasicBuf(const BasicBuf &bbuf);
         BasicBuf &operator=(const BasicBuf &bbuf);
-        void set_lru(LRUNode *node) 
-        { 
-            m_page = node->pageno; 
-            m_lrubuf = node; 
-            m_buf = node->buf; 
-        }
-
+        void set_lru(LRUNode *node) { m_lrubuf = node; }
         LRUNode *get_lru() 
         { 
             LRUNode *tmp = m_lrubuf; 
-            m_page = 0; 
-            m_buf = NULL; 
-            m_lrunode = NULL; 
+            m_lrubuf = NULL; 
             return tmp;
         }
 
-        uint32_t m_page;
         LRUNode *m_lrubuf;
     };
    
@@ -88,14 +79,14 @@ namespace ST
         virtual ~PageBuf() {} 
 
         //basic header get/set
-        uint8_t get_type() const { return get_uint8(m_buf, HEADER_TYPE); }
-        void set_type(uint8_t type) { set_uint8(m_buf, HEADER_TYPE, type); }
+        uint8_t get_type() const { return get_uint8(get_buf(), HEADER_TYPE); }
+        void set_type(uint8_t type) { set_uint8(get_buf(), HEADER_TYPE, type); }
      
-        uint32_t get_size() const { return get_uint32(m_buf, HEADER_SIZE); }
-        void set_size(uint32_t type) { set_uint32(m_buf, HEADER_SIZE, type); }
+        uint32_t get_size() const { return get_uint32(get_buf(), HEADER_SIZE); }
+        void set_size(uint32_t type) { set_uint32(get_buf(), HEADER_SIZE, type); }
 
-        uint32_t get_next() const { return get_uint32(m_buf, HEADER_NEXT); }
-        void set_next(uint32_t type) { set_uint32(m_buf, HEADER_NEXT, type); }
+        uint32_t get_next() const { return get_uint32(get_buf(), HEADER_NEXT); }
+        void set_next(uint32_t type) { set_uint32(get_buf(), HEADER_NEXT, type); }
 
     protected:
         PageBuf(Pager &pgr, uint16_t metasize): BasicBuf(pgr, metasize) {}
@@ -126,7 +117,7 @@ namespace ST
         void close();
 
         void new_page(BasicBuf &buf, uint32_t page);
-        void new_page(BasicBuf &buf); //allocate memory and space in the file
+        void new_page(BasicBuf &buf) { new_page(buf, alloc_pages(1)); } 
         void read_page(BasicBuf &buf, uint32_t page); 
         void return_page(BasicBuf &buf);
       
@@ -156,10 +147,10 @@ namespace ST
             return false;
         }
 
-        // allocate count pages (bytes) on disk, return pointer
+        // allocate count pages on disk, return pointer
         uint32_t alloc_pages(uint32_t count, int flags = 0);
 
-        // free count pages (bytes) starting at start
+        // free count pages starting at start
         void free_pages(uint32_t start, uint32_t count);
 
         void free_page(BasicBuf &buf)

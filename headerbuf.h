@@ -52,12 +52,12 @@ namespace ST
         uint16_t count_freenodes();
         uint16_t max_freenodes() { return get_payloadsize() / FREE_CHUNK; }
 
-        void set_magic(const char *magic) { memcpy(m_buf + HEADER_MAGIC, magic, MAGIC_LEN); } 
+        void set_magic(const char *magic) { memcpy(get_buf() + HEADER_MAGIC, magic, MAGIC_LEN); } 
         string get_magic() const;
-        void set_file_pagesize(uint16_t psz) { set_uint16(m_buf, HEADER_PAGESZ, psz); }
-        uint16_t get_file_pagesize() const { return get_uint16(m_buf, HEADER_PAGESZ); }
-        void set_file_pagecount(uint32_t pc) { set_uint32(m_buf, HEADER_PAGECT, pc); }
-        uint32_t get_file_pagecount() const { return get_uint32(m_buf, HEADER_PAGECT); }
+        void set_file_pagesize(uint16_t psz) { set_uint16(get_buf(), HEADER_PAGESZ, psz); }
+        uint16_t get_file_pagesize() const { return get_uint16(get_buf(), HEADER_PAGESZ); }
+        void set_file_pagecount(uint32_t pc) { set_uint32(get_buf(), HEADER_PAGECT, pc); }
+        uint32_t get_file_pagecount() const { return get_uint32(get_buf(), HEADER_PAGECT); }
 
         //peak at a header. return page size or 0 for error
         static uint16_t check_header(const buffer &head);

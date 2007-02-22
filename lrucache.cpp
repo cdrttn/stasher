@@ -66,7 +66,7 @@ LRUNode *LRUCache::alloc_buf(uint32_t pageno)
     LRUNode *node = NULL;
     PAGEMAP::iterator piter;
 
-    assert(m_pagemap.find(pageno) == m_pagemap.end());
+    //assert(m_pagemap.find(pageno) == m_pagemap.end());
   
     m_pagenew++;
     // try to recycle memory if the cache is too large

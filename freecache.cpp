@@ -8,12 +8,13 @@ using namespace std;
 
 FreeCache::~FreeCache()
 {
-    destroy();
+    //XXX: meh fix this shit
+    //destroy();
 }
 
 void FreeCache::load(Pager &pgr, uint32_t ptr)
 {
-    int i;
+    uint16_t i;
     uint32_t next, offset, span;
     HeaderBuf head(pgr);
 
@@ -53,11 +54,11 @@ void FreeCache::sync(Pager &pgr, uint32_t ptr, int destroy)
     pgr.read_page_dirty(head, ptr);
     assert(head.get_size() == 0);
     len = m_freelist.size();
-    maxfn = head.get_maxfreenodes();
+    maxfn = head.max_freenodes();
 
     if (len > maxfn)
     {
-        len -= maxfn
+        len -= maxfn;
         clen = len / maxfn;
         if (len % maxfn)
             clen++;
@@ -65,6 +66,7 @@ void FreeCache::sync(Pager &pgr, uint32_t ptr, int destroy)
         //this might allocate an unneeded page if the allocation causes removal of a freenode
         //no biggie, though
         chunk = pgr.alloc_pages(clen);
+        printf("chunk %d, clen %d\n", chunk, clen);
     }
 
     for (fiter = m_freelist.begin(); fiter != m_freelist.end(); fiter++)
@@ -73,6 +75,7 @@ void FreeCache::sync(Pager &pgr, uint32_t ptr, int destroy)
         {
             assert(chunk);
             head.set_next(chunk);
+            printf("%u set_next %u\n", head.get_page(), chunk);
             pgr.new_page(head, chunk++);
         }
        
@@ -215,7 +218,6 @@ void FreeCache::push_free(FreeNode *item)
 
 FreeNode *FreeCache::add_free(uint32_t offset, uint32_t span)
 {
-    HEADERS::iterator iter;
     FreeNode *node;
 
     assert(offset > 0 && span > 0);

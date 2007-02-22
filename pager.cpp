@@ -14,20 +14,23 @@ using namespace ST;
 
 
 BasicBuf::BasicBuf(Pager &pgr): 
-    m_pager(pgr), m_buf(NULL), m_page(0), 
-    m_dirty(false), m_metasize(0)
+    m_pager(pgr), m_metasize(0), m_lrubuf(NULL)
 {
 }
 
 BasicBuf::BasicBuf(Pager &pgr, uint32_t metasize): 
-    m_pager(pgr), m_buf(NULL), m_page(0), 
-    m_dirty(false), m_metasize(metasize)
+    m_pager(pgr), m_metasize(metasize), m_lrubuf(NULL)
 {
+}
+
+uint16_t BasicBuf::get_pagesize() const
+{
+    return m_pager.pagesize();
 }
 
 BasicBuf::~BasicBuf()
 {
-    m_pager.mem_free_page(*this); 
+    m_pager.return_page(*this); 
 }
 
 Pager::Pager()
@@ -37,7 +40,7 @@ Pager::Pager()
 
 Pager::~Pager() 
 { 
-    catch
+    try
     {
         close(); 
     } 
@@ -110,14 +113,16 @@ void Pager::open(const string &file, int flags, int mode, uint32_t maxcache, uin
 void Pager::close()
 {
     if (!m_opened)
-        return false;
+        return;
     
+    HeaderBuf header(*this);
+
     if (m_write)
     {
-        HeaderBuf header(*this);
+        m_free.sync(*this, 0, FreeCache::DESTROY);
         read_page_dirty(header, 0);
         header.set_file_pagecount(m_pagecount);
-        m_free.sync(*this, 0, FreeCache::DESTROY);
+        return_page(header);
     }
 
     m_lru.close();
@@ -126,15 +131,16 @@ void Pager::close()
 
 void Pager::sync()
 {
+    HeaderBuf header(*this);
+
     if (m_write)
     {
-        HeaderBuf header(*this);
+        m_free.sync(*this, 0);
         read_page_dirty(header, 0);
         header.set_file_pagecount(m_pagecount);
-        m_free.sync(*this, 0);
+        return_page(header);
+        m_lru.sync();
     }
-
-    m_lru.sync();
 }
 
 //create a new dirty page
@@ -148,12 +154,6 @@ void Pager::new_page(BasicBuf &buf, uint32_t page)
     buf.clear();
     buf.create();
     buf.make_dirty();
-}
-
-//allocate space in the file and create new single page
-void Pager::new_page(BasicBuf &buf)
-{
-    new_page(buf, alloc_pages(1));
 }
 
 void Pager::read_page(BasicBuf &buf, uint32_t page) 
@@ -179,9 +179,9 @@ uint32_t Pager::alloc_pages(uint32_t count, int flags)
         throw IOException("file is readonly", m_filename);
 
     uint32_t offset;
-    auto_ptr<FreeNode *> node(m_free.pop_free(count));
+    auto_ptr<FreeNode> node(m_free.pop_free(count));
 
-    if (!node)
+    if (!node.get())
     {
         offset = m_pagecount;
         m_pagecount += count;

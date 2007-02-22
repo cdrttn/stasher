@@ -77,7 +77,7 @@ void HeaderBuf::get_freenode(uint16_t index, uint32_t &offset, uint32_t &span)
 string HeaderBuf::get_magic() const
 {
     char buf[MAGIC_LEN];
-    memcpy(buf, m_buf + HEADER_MAGIC, MAGIC_LEN);
+    memcpy(buf, get_buf() + HEADER_MAGIC, MAGIC_LEN);
     string ret(buf, MAGIC_LEN);
 
     return ret;

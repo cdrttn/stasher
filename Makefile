@@ -4,11 +4,12 @@ CPP = g++
 CFLAGS = -Wall -fno-inline -ggdb -DHAVE_STDINT -DCHECK_PAGES -D_LARGEFILE64_SOURCE=1 -DLARGEFILE_SOURCE=1 -D_FILE_OFFSET_BITS=64
 LDFLAGS = -lm 
 
-OBJ = pager.o freecache.o fileio.o headerbuf.o bucketbuf.o bucket.o overflow.o bucketarray.o hashfunc.o stasher.o
+OBJ = pager.o lrucache.o freecache.o fileio.o headerbuf.o bucketbuf.o bucket.o overflow.o bucketarray.o hashfunc.o stasher.o
 lruOBJ = lrucache.o fileio.o
 bbOBJ = pager.o freecache.o fileio.o headerbuf.o bucketbuf.o 
 bOBJ = $(bbOBJ) bucket.o overflow.o
 oOBJ = $(bbOBJ) overflow.o
+pOBJ = pager.o lrucache.o freecache.o fileio.o headerbuf.o
 
 lru: test_lru.o $(lruOBJ)
 	$(CPP) -o lru test_lru.o $(lruOBJ) $(LDFLAGS)
@@ -31,8 +32,8 @@ bucket: test_bucket.o $(bOBJ)
 bbuf: test_bucketbuf.o $(bbOBJ)
 	$(CPP) -o bbuf test_bucketbuf.o $(bbOBJ) $(LDFLAGS)
 
-pager: test_pager.o $(OBJ)
-	$(CPP) -o pager test_pager.o $(OBJ) $(LDFLAGS)
+pager: test_pager.o $(pOBJ)
+	$(CPP) -o pager test_pager.o $(pOBJ) $(LDFLAGS)
 
 writebuf: test_writebuf.o $(OBJ)
 	$(CPP) -o writebuf test_writebuf.o $(OBJ) $(LDFLAGS)
