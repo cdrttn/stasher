@@ -221,7 +221,7 @@ void Pager::free_pages(uint32_t start, uint32_t count)
     //add the free range to check for merges
     node = m_free.add_free(start, count);
 
-    //truncate and remove node from free cache and header table
+    //truncate and remove node from free cache
     if (node->get_offset() + node->get_span() >= m_pagecount)
     {
         m_pagecount = node->get_offset();

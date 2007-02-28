@@ -66,38 +66,50 @@ LRUNode *LRUCache::alloc_buf(uint32_t pageno)
     LRUNode *node = NULL;
     PAGEMAP::iterator piter;
 
-    //assert(m_pagemap.find(pageno) == m_pagemap.end());
-  
     m_pagenew++;
-    // try to recycle memory if the cache is too large
-    if (m_curcache >= m_maxcache)
-    {
-        node = m_tail;
-        while (node && node->pinned)
-            node = node->prev;
 
-        if (node)
+    piter = m_pagemap.find(pageno);
+
+    if (piter == m_pagemap.end())
+    {
+        // try to recycle memory if the cache is too large
+        if (m_curcache >= m_maxcache)
         {
-            pop_buf(node);
+            node = m_tail;
+            while (node && node->pinned)
+                node = node->prev;
 
-            if (node->dirty)
-                write_buf(node);
+            if (node)
+            {
+                pop_buf(node);
 
-            piter = m_pagemap.find(node->pageno);
-            assert(piter != m_pagemap.end());
-            m_pagemap.erase(piter);
-            node->pageno = pageno;
+                if (node->dirty)
+                    write_buf(node);
+
+                piter = m_pagemap.find(node->pageno);
+                assert(piter != m_pagemap.end());
+                m_pagemap.erase(piter);
+                node->pageno = pageno;
+            }
         }
-    }
 
-    if (!node)
+        if (!node)
+        {
+            m_pagealloc++;
+            node = new LRUNode(pageno, m_pagesize);
+            m_curcache++;
+        }
+    
+        m_pagemap[pageno] = node;
+    }
+    else
     {
-        m_pagealloc++;
-        node = new LRUNode(pageno, m_pagesize);
-        m_curcache++;
+        //a free page may exist in the index if it was cleared with clear_extent()
+        node = piter->second;
+        assert(!node->pinned && !node->dirty);
+        pop_buf(node);
     }
 
-    m_pagemap[pageno] = node;
     push_buf(node); 
 
     return node;
