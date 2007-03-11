@@ -28,6 +28,7 @@ namespace ST
         uint16_t get_pagesize() const;
         uint16_t get_metasize() const { return m_metasize; }
         uint8_t *get_payload() { return get_buf() + m_metasize; }
+        const uint8_t *get_payload() const { return get_buf() + m_metasize; }
         uint16_t get_payloadsize() const { return get_pagesize() - m_metasize; }
 
         Pager &pager() { return m_pager; }
@@ -39,6 +40,8 @@ namespace ST
         void make_dirty() { if (m_lrubuf) m_lrubuf->make_dirty(); }
         uint8_t *get_buf() { return m_lrubuf? m_lrubuf->get_buf() : NULL; }
         const uint8_t *get_buf() const { return m_lrubuf? m_lrubuf->get_buf() : NULL; }
+        //uint8_t *get_end() { return get_buf() + get_pagesize(); }
+        const uint8_t *get_end() const { return get_buf() + get_pagesize(); }
         uint32_t get_page() const { return m_lrubuf? m_lrubuf->get_pageno() : 0; }
 
     protected:

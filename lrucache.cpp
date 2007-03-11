@@ -186,7 +186,7 @@ void LRUCache::sync(int destroy)
     {
         node = piter->second;
 
-        if (node->dirty)
+        if (node->dirty && !node->pinned)
             write_buf(node);
         
         if (destroy)
