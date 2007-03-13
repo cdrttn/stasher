@@ -42,7 +42,7 @@ private:
 class TestBucketBuf: public BucketBuf<TestRec>
 {
 public:
-    TestBucketBuf(Pager &pgr): 
+    TestBucketBuf(Pager *pgr = NULL): 
         BucketBuf<TestRec>(pgr, BucketBuf<TestRec>::BUCKET_END, 'B')
         {}
 
@@ -80,7 +80,7 @@ void write_test(const char *file)
     uint16_t len;
     int i;
     Pager pgr;
-    TestBucketBuf buf(pgr);
+    TestBucketBuf buf;
 
     pgr.open(file, Pager::OPEN_WRITE);
     printf("opened(write) -> %s, pages -> %d\n", pgr.filename().c_str(), pgr.length());
@@ -140,7 +140,7 @@ void write_test(const char *file)
 void read_test(const char *file)
 {
     Pager pgr;
-    TestBucketBuf buf(pgr);
+    TestBucketBuf buf;
     TestBucketBuf::iterator it;
 
     pgr.open(file);

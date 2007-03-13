@@ -41,7 +41,7 @@ namespace ST
             HEADER_END = HEADER_PAGECT + 4 
         };
     public:
-        HeaderBuf(Pager &pgr): PageBuf(pgr, HEADER_END) {}
+        HeaderBuf(Pager *pgr = NULL): PageBuf(pgr, HEADER_END) {}
         virtual ~HeaderBuf() {}
 
         virtual bool validate();
@@ -63,7 +63,7 @@ namespace ST
         static uint16_t check_header(const buffer &head);
         
     protected:
-        HeaderBuf(Pager &pgr, uint16_t metasize): PageBuf(pgr, metasize) {}
+        HeaderBuf(Pager *pgr, uint16_t metasize): PageBuf(pgr, metasize) {}
 
     private:
         void decr() { set_size(get_size()-1); }

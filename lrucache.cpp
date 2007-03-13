@@ -22,6 +22,7 @@ void LRUCache::init(int fd, uint16_t pagesize, uint32_t maxcache)
     m_pagenew = m_pagealloc = 0;
     m_pageget = m_pageread = 0;
     m_pagewrite = 0;
+    m_anon_alloc = 0;
 }
 
 inline void LRUCache::pop_buf(LRUNode *node)
@@ -33,11 +34,18 @@ inline void LRUCache::pop_buf(LRUNode *node)
     node->pop();
 }
 
-inline void LRUCache::push_buf(LRUNode *node)
+inline void LRUCache::push_buf_front(LRUNode *node)
 {
     node->push(m_head);
     if (!m_tail)
         m_tail = node;
+}
+
+inline void LRUCache::push_buf_back(LRUNode *node)
+{
+    node->push_after(m_tail);
+    if (!m_head)
+        m_head = node;
 }
 
 void LRUCache::write_buf(LRUNode *node)
@@ -110,7 +118,7 @@ LRUNode *LRUCache::alloc_buf(uint32_t pageno)
         pop_buf(node);
     }
 
-    push_buf(node); 
+    push_buf_front(node); 
 
     return node;
 }
@@ -119,7 +127,18 @@ LRUNode *LRUCache::new_page(uint32_t pageno)
 {
     LRUNode *node = alloc_buf(pageno);
 
-    node->pinned = true;
+    node->incref();
+
+    return node;
+}
+
+LRUNode *LRUCache::new_anon()
+{
+    LRUNode *node = new LRUNode(0, m_pagesize);
+
+    node->anonymous = true;
+    node->incref();
+    m_anon_alloc++;
 
     return node;
 }
@@ -135,9 +154,8 @@ LRUNode *LRUCache::get_page(uint32_t pageno)
     if (piter != m_pagemap.end())
     {
         node = piter->second;
-        assert(!node->pinned);
         pop_buf(node);
-        push_buf(node);
+        push_buf_front(node);
     }
     else
     {
@@ -145,18 +163,37 @@ LRUNode *LRUCache::get_page(uint32_t pageno)
         read_buf(node);
     }
 
-    node->pinned = true;
+    node->incref();
 
     return node;
 }
 
 void LRUCache::put_page(LRUNode *node)
 {
-    assert(node->pinned);
-    node->pinned = false;
+    node->decref();
+    if (!node->pinned)
+    {
+        if (node->condemned)
+        {   
+            node->condemned = false;
+            node->dirty = false;
+        }
+        if (node->anonymous)    
+        {
+            m_anon_alloc--;
+            delete node;
+        }
+        else if (node->discard)
+        {
+            pop_buf(node);
+            push_buf_back(node);
+            node->discard = false; 
+        }
+    }
 }
 
-//check an extent that was deallocated
+//mark a range that was deallocated from disk so that none of the pages will be written
+//nodes that are still referenced are "condemned", so time is given to the user to clean up
 void LRUCache::clear_extent(uint32_t offset, uint32_t span, int wipe)
 {
     PAGEMAP::iterator piter;
@@ -168,8 +205,10 @@ void LRUCache::clear_extent(uint32_t offset, uint32_t span, int wipe)
     while (piter != m_pagemap.end() && piter->first < ubound)
     {
         node = piter->second;
-        assert(!node->pinned);
-        node->dirty = false;
+        if (node->pinned)
+            node->condemned = true;
+        else
+            node->dirty = false;
         if (wipe)
             memset(node->buf, 0, m_pagesize);
         piter++;
@@ -204,6 +243,7 @@ void LRUCache::sync(int destroy)
 
     if (destroy)
     {
+        assert(!m_anon_alloc);
         m_tail = m_head = NULL;
         m_curcache = 0;
     }
@@ -217,6 +257,7 @@ void LRUCache::stats()
     int i;
 
     puts("");
+    printf("outstanding anon allocs %d\n", m_anon_alloc);
     printf("cached %u, max %u\n", m_curcache, m_maxcache);
     printf("pagenew %u, pagealloc %u, buffers reclaimed %u\n", m_pagenew, m_pagealloc, m_pagenew - m_pagealloc);
     printf("pageget %u, pageread %u, cache misses %u\n", m_pageget, m_pageread, misses);

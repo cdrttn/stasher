@@ -21,7 +21,13 @@ namespace ST
     public:
         friend class Pager;
 
-        BasicBuf(Pager &pgr); 
+        BasicBuf(Pager *pgr = NULL): m_pager(pgr), m_metasize(0), m_lrubuf(NULL) {}
+        BasicBuf(const BasicBuf &bbuf): m_pager(NULL), m_lrubuf(NULL) { copy(bbuf); }
+        BasicBuf &operator=(const BasicBuf &bbuf) { copy(bbuf); return *this; }
+        bool operator==(const BasicBuf &r) const { return m_lrubuf == r.m_lrubuf; }        
+        bool operator!=(const BasicBuf &r) const { return m_lrubuf != r.m_lrubuf; }        
+        operator bool() const { return get_page() != 0; }
+        bool operator!() const { return get_page() == 0; }
 
         virtual ~BasicBuf();
 
@@ -31,28 +37,30 @@ namespace ST
         const uint8_t *get_payload() const { return get_buf() + m_metasize; }
         uint16_t get_payloadsize() const { return get_pagesize() - m_metasize; }
 
-        Pager &pager() { return m_pager; }
+        Pager *pager() { return m_pager; }
         void clear() { memset(get_buf(), 0, get_pagesize()); }
         void clear_payload() { memset(get_payload(), 0, get_payloadsize()); }
         bool allocated() const { return (get_buf() != NULL); }
-        virtual bool validate() { return true; }
-        virtual void create() {}
         void make_dirty() { if (m_lrubuf) m_lrubuf->make_dirty(); }
+        void discard() { if (m_lrubuf) m_lrubuf->set_discard(); }
         uint8_t *get_buf() { return m_lrubuf? m_lrubuf->get_buf() : NULL; }
         const uint8_t *get_buf() const { return m_lrubuf? m_lrubuf->get_buf() : NULL; }
         //uint8_t *get_end() { return get_buf() + get_pagesize(); }
         const uint8_t *get_end() const { return get_buf() + get_pagesize(); }
         uint32_t get_page() const { return m_lrubuf? m_lrubuf->get_pageno() : 0; }
 
-    protected:
-        BasicBuf(Pager &pgr, uint32_t metasize); 
+        virtual bool validate() { return true; }
+        virtual void create() {}
+        virtual void release() {}
 
-        Pager &m_pager;
+    protected:
+        BasicBuf(Pager *pgr, uint32_t metasize): 
+            m_pager(pgr), m_metasize(metasize), m_lrubuf(NULL) {}
+
+        Pager *m_pager;
         uint16_t m_metasize;
 
     private:
-        BasicBuf(const BasicBuf &bbuf);
-        BasicBuf &operator=(const BasicBuf &bbuf);
         void set_lru(LRUNode *node) { m_lrubuf = node; }
         LRUNode *get_lru() 
         { 
@@ -61,9 +69,11 @@ namespace ST
             return tmp;
         }
 
+        void copy(const BasicBuf &bbuf);
+        
         LRUNode *m_lrubuf;
     };
-   
+
     //Page with simple metadata (type, size, next)
     class PageBuf: public BasicBuf
     {
@@ -72,13 +82,15 @@ namespace ST
         enum
         {
             HEADER_TYPE = 0,
-            HEADER_SIZE = 1,
-            HEADER_NEXT = 5,
-            BASIC_END = 9
+            HEADER_SIZE = HEADER_TYPE + 1,
+            HEADER_NEXT = HEADER_SIZE + 4,
+            HEADER_PREV = HEADER_NEXT + 4,
+            HEADER_TAIL = HEADER_PREV + 4,
+            BASIC_END = HEADER_TAIL + 4
         };
 
     public:
-        PageBuf(Pager &pgr): BasicBuf(pgr, BASIC_END) {}
+        PageBuf(Pager *pgr = NULL): BasicBuf(pgr, BASIC_END) {}
         virtual ~PageBuf() {} 
 
         //basic header get/set
@@ -86,13 +98,19 @@ namespace ST
         void set_type(uint8_t type) { set_uint8(get_buf(), HEADER_TYPE, type); }
      
         uint32_t get_size() const { return get_uint32(get_buf(), HEADER_SIZE); }
-        void set_size(uint32_t type) { set_uint32(get_buf(), HEADER_SIZE, type); }
+        void set_size(uint32_t size) { set_uint32(get_buf(), HEADER_SIZE, size); }
 
         uint32_t get_next() const { return get_uint32(get_buf(), HEADER_NEXT); }
-        void set_next(uint32_t type) { set_uint32(get_buf(), HEADER_NEXT, type); }
+        void set_next(uint32_t ptr) { set_uint32(get_buf(), HEADER_NEXT, ptr); }
+
+        uint32_t get_prev() const { return get_uint32(get_buf(), HEADER_PREV); }
+        void set_prev(uint32_t ptr) { set_uint32(get_buf(), HEADER_PREV, ptr); }
+
+        uint32_t get_tail() const { return get_uint32(get_buf(), HEADER_TAIL); }
+        void set_tail(uint32_t ptr) { set_uint32(get_buf(), HEADER_TAIL, ptr); }
 
     protected:
-        PageBuf(Pager &pgr, uint16_t metasize): BasicBuf(pgr, metasize) {}
+        PageBuf(Pager *pgr, uint16_t metasize): BasicBuf(pgr, metasize) {}
     };
 
 
@@ -112,13 +130,21 @@ namespace ST
             OPEN_WRITE = 1<<2,
         };
     public:
-        Pager(); 
-        virtual ~Pager(); 
+        Pager(): m_pagesize(0), m_pagecount(0), m_write(false), m_opened(false) { }
+        virtual ~Pager() 
+        { 
+            try
+            {
+                close(); 
+            } 
+            catch (...) {}
+        }
 
         void open(const string &file, int flags = OPEN_WRITE, int mode = 0644, uint32_t maxcache = 512, uint16_t pagesize = 0);
         void sync();
         void close();
 
+        void new_page_tmp(BasicBuf &buf);
         void new_page(BasicBuf &buf, uint32_t page);
         void new_page(BasicBuf &buf) { new_page(buf, alloc_pages(1)); } 
         void read_page(BasicBuf &buf, uint32_t page); 
@@ -159,6 +185,7 @@ namespace ST
         void free_page(BasicBuf &buf)
         {
             uint32_t page = buf.get_page();
+            buf.release();
             return_page(buf);
             free_pages(page, 1);
         }

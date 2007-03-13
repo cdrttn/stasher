@@ -16,7 +16,7 @@ void FreeCache::load(Pager &pgr, uint32_t ptr)
 {
     uint16_t i;
     uint32_t next, offset, span;
-    HeaderBuf head(pgr);
+    HeaderBuf head;
 
     pgr.read_page_dirty(head, ptr);
 
@@ -47,7 +47,7 @@ void FreeCache::sync(Pager &pgr, uint32_t ptr, int destroy)
     size_t len;
     uint16_t maxfn;
     uint32_t chunk = 0, clen;
-    HeaderBuf head(pgr);
+    HeaderBuf head;
     FREELIST::const_iterator fiter;
 
     //sync freelist to file using available pages. allocate needed pages first

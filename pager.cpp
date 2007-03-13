@@ -12,39 +12,29 @@
 using namespace std;
 using namespace ST;
 
-
-BasicBuf::BasicBuf(Pager &pgr): 
-    m_pager(pgr), m_metasize(0), m_lrubuf(NULL)
-{
-}
-
-BasicBuf::BasicBuf(Pager &pgr, uint32_t metasize): 
-    m_pager(pgr), m_metasize(metasize), m_lrubuf(NULL)
-{
-}
-
 uint16_t BasicBuf::get_pagesize() const
 {
-    return m_pager.pagesize();
+    return m_pager? m_pager->pagesize() : 0;
+}
+
+void BasicBuf::copy(const BasicBuf &bbuf)
+{
+    if (this == &bbuf)
+        return;
+
+    if (m_pager)
+        m_pager->return_page(*this); 
+    m_pager = bbuf.m_pager;
+    m_metasize = bbuf.m_metasize;
+    m_lrubuf = bbuf.m_lrubuf;
+    if (m_lrubuf)
+        m_lrubuf->incref();            
 }
 
 BasicBuf::~BasicBuf()
 {
-    m_pager.return_page(*this); 
-}
-
-Pager::Pager()
-    : m_pagesize(0), m_pagecount(0), m_write(false), m_opened(false) 
-{
-}
-
-Pager::~Pager() 
-{ 
-    try
-    {
-        close(); 
-    } 
-    catch (...) {}
+    if (m_pager)
+        m_pager->return_page(*this); 
 }
 
 void Pager::open(const string &file, int flags, int mode, uint32_t maxcache, uint16_t pagesize)
@@ -92,7 +82,7 @@ void Pager::open(const string &file, int flags, int mode, uint32_t maxcache, uin
     //lru now owns fd
     m_lru.init(m_io.get_fd(), m_pagesize, maxcache);
     
-    HeaderBuf header(*this);
+    HeaderBuf header;
     
     //create() sets the file page size and initial page count
     if (!strict)
@@ -115,7 +105,7 @@ void Pager::close()
     if (!m_opened)
         return;
     
-    HeaderBuf header(*this);
+    HeaderBuf header;
 
     if (m_write)
     {
@@ -131,7 +121,7 @@ void Pager::close()
 
 void Pager::sync()
 {
-    HeaderBuf header(*this);
+    HeaderBuf header;
 
     if (m_write)
     {
@@ -143,13 +133,26 @@ void Pager::sync()
     }
 }
 
+//create tmp anon page
+void Pager::new_page_tmp(BasicBuf &buf)
+{
+    if (buf.m_pager)
+        buf.m_pager->return_page(buf);
+    buf.m_pager = this;
+    buf.set_lru(m_lru.new_anon());
+    buf.clear();
+    buf.create();
+}
+
 //create a new dirty page
 void Pager::new_page(BasicBuf &buf, uint32_t page)
 {
     if (!m_write)
         throw IOException("file is readonly", m_filename);
 
-    return_page(buf);
+    if (buf.m_pager)
+        buf.m_pager->return_page(buf);
+    buf.m_pager = this;
     buf.set_lru(m_lru.new_page(page));
     buf.clear();
     buf.create();
@@ -158,13 +161,17 @@ void Pager::new_page(BasicBuf &buf, uint32_t page)
 
 void Pager::read_page(BasicBuf &buf, uint32_t page) 
 {
-    return_page(buf);
+    if (buf.m_pager)
+        buf.m_pager->return_page(buf);
+    buf.m_pager = this;
     buf.set_lru(m_lru.get_page(page));
 }
 
 void Pager::return_page(BasicBuf &buf)
 {
     LRUNode *node;
+
+    assert(buf.m_pager == this);
 
     node = buf.get_lru();
     if (!node)

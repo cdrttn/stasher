@@ -40,9 +40,12 @@ int main(int argc, char **argv)
         {
             LRUNode *node = lru.get_page(i);
             puts((char*)node->get_buf());
+            node->set_discard();
             lru.put_page(node);
         }
     }
+
+    lru.put_page(lru.new_anon());
    
     lru.stats();
    

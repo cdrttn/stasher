@@ -206,7 +206,7 @@ namespace ST
         bool full() const { return !get_size(); } 
 
     protected: 
-        BucketBuf(Pager &pgr, uint32_t metaend, uint8_t marker)
+        BucketBuf(Pager *pgr, uint32_t metaend, uint8_t marker)
             :PageBuf(pgr, metaend), m_bucketmarker(marker) 
         { }
 
