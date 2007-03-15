@@ -15,10 +15,11 @@ namespace ST
     public:
         friend class LRUCache;
         
-        uint32_t get_pageno() { return pageno; }
-        uint8_t *get_buf() { return buf; }
+        uint32_t get_pageno() const { return pageno; }
+        uint8_t *get_buf() const { return buf; }
         void make_dirty() { dirty = true; }
         void set_discard() { discard = true; }
+        bool anon() const { return anonymous; }
         void incref() { pinned++; }
 
     private:

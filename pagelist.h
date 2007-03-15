@@ -7,15 +7,23 @@
 
 namespace ST
 {
-    template <class PageT>
-    class PageIter: std::iterator<std::bidirectional_iterator_tag, PageT>
+    template <class PageT, class Pointer, class Reference>
+    struct PageIter: std::iterator<std::bidirectional_iterator_tag, PageT, ptrdiff_t, Pointer, Reference>
     {
-    public:
-        PageT &operator*() const { return *((PageT*)&m_page); }
-        PageT *operator->() const { return (PageT*)&m_page; }
-        bool operator==(const PageIter &r) { return m_page == r.m_page; }
-        bool operator!=(const PageIter &r) { return !(*this == r); }
-        
+        typedef PageIter<PageT, PageT *, PageT &> iterator;
+        typedef PageIter<PageT, const PageT *, const PageT &> const_iterator;
+
+        PageIter () {}
+        //can convert iterator to const_iterator
+        PageIter(const iterator &pi) {m_nil = pi.m_nil; m_page = pi.m_page;}
+        Reference operator*() const { return m_page; }
+        Pointer operator->() const { return &m_page; }
+
+        bool operator==(const iterator &r) { return m_page == r.m_page; }
+        bool operator!=(const iterator &r) { return !(*this == r); }
+        bool operator==(const const_iterator &r) { return m_page == r.m_page; }
+        bool operator!=(const const_iterator &r) { return !(*this == r); }
+ 
         PageIter &operator++()
         {
             read(m_page.get_next());
@@ -42,9 +50,11 @@ namespace ST
             return tmp;
         } 
 
-    private:
-        PageT m_page;
-        PageT m_nil;
+        PageIter(const PageT &nil, uint32_t page)
+        {
+            m_nil = nil;
+            read(page);
+        }
 
         void read(uint32_t pg)
         {
@@ -53,15 +63,17 @@ namespace ST
             if (!pgr->deref_page(m_page, pg))
                 m_page = m_nil;
         }
-     
-        template <class> friend class PageList;
+
+        mutable PageT m_page;
+        mutable PageT m_nil;
     };
    
     template <class PageT>
     class PageList
     {
     public:
-        typedef PageIter<PageT> iterator;
+        typedef PageIter<PageT, PageT *, PageT &> iterator;
+        typedef PageIter<PageT, const PageT *, const PageT &> const_iterator;
 
         PageList(Pager &pgr, uint32_t hptr = 0)
             :m_pager(pgr) 
@@ -89,34 +101,24 @@ namespace ST
             
             if (!m_pager.writeable())
                 return;
-            if (m_pager.deref_page_dirty(head, m_nil.get_next()))
-                head.set_tail(m_nil.get_prev()); 
+            if (m_pager.deref_page_dirty(head, get_head()))
+                head.set_tail(get_tail()); 
         }
 
         uint32_t get_head() const { return m_nil.get_next(); }
         uint32_t get_tail() const { return m_nil.get_prev(); }
 
-        iterator begin()
-        {
-            iterator it;
-            it.m_nil = m_nil;
-            it.read(m_nil.get_next());
-            return it;
-        }
-        
-        iterator end()
-        {
-            iterator it;
-            it.m_nil = m_nil;
-            it.m_page = m_nil;
-            return it; 
-        }
+        iterator begin() { return iterator(m_nil, get_head()); }
+        iterator end() { return iterator(m_nil, 0); }
+        const_iterator begin() const { return const_iterator(m_nil, get_head()); }
+        const_iterator end() const { return const_iterator(m_nil, 0); }
 
-        void erase(iterator iter)
+        //XXX take a reference to iterator to return the page/invalidate iter
+        void erase(iterator &iter)
         {
             PageT l, r;
             
-            assert(*iter != m_nil);
+            assert(iter.m_nil == m_nil && iter.m_page != m_nil);
 
             read(l, iter->get_prev());
             read(r, iter->get_next()); 
@@ -153,9 +155,28 @@ namespace ST
             insert(end(), page);    
         }
 
+        void clear()
+        {
+            iterator it;
+            while ((it = begin()) != end())
+                erase(it);    
+        }
+
+        uint32_t size() const
+        {
+            uint32_t i;
+            const_iterator it;
+
+            for (i = 0, it = begin(); it != end(); ++it, ++i)
+                ;
+            
+            return i; 
+        }
+
+        bool empty() const { return begin() == end(); }
+
     private:
         Pager &m_pager;
-        uint32_t m_head;
         PageT m_nil;
 
         void read(PageT &pg, uint32_t pgno)

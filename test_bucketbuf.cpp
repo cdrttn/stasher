@@ -55,7 +55,7 @@ public:
         ptr = alloc_heap(size);
         memcpy(ptr, data, size);
 
-        alloc_meta(newrec);
+        alloc_meta_at(newrec, get_payload());
         newrec.set_type(tok);
         newrec.set_datasize(size);
         newrec.set_dataptr(ptr_meta(ptr));
@@ -105,7 +105,7 @@ void write_test(const char *file)
     //iter_swap(a, b); 
     //printf("a(%d), b(%d)\n", a->get_type(), b->get_type());
 
-    random_shuffle(buf.begin(), buf.end());
+    //random_shuffle(buf.begin(), buf.end());
     //sort(buf.begin(), buf.end(), cmp);
     TestRec tmp;
     //while (buf.begin() != buf.end())
@@ -130,11 +130,11 @@ void write_test(const char *file)
     //buf.remove(--buf.end());
     //buf.remove(--buf.end());
 
-    for (it = buf.begin(); it < buf.end(); )
-    {
-        a = it++;
-        buf.remove(a);
-    }
+    //for (it = buf.begin(); it < buf.end(); )
+    //{
+        //a = it++;
+        //buf.remove(it);
+    //}
 }
 
 void read_test(const char *file)
@@ -142,14 +142,18 @@ void read_test(const char *file)
     Pager pgr;
     TestBucketBuf buf;
     TestBucketBuf::iterator it;
+    TestBucketBuf::const_iterator cit;
 
     pgr.open(file);
     printf("opened(read) -> %s, pages -> %d\n", pgr.filename().c_str(), pgr.length());
 
     pgr.read_page(buf, 1);
+    for (cit = buf.begin(); cit < buf.end(); ++cit)
+        printf("id(%4d) : %s\n", cit->get_type(), (char*)cit->get_data());
     sort(buf.begin(), buf.end(), cmp);
-    for (it = buf.begin(); it != buf.end(); ++it)
-        printf("id(%4d) : %s\n", it->get_type(), (char*)it->get_data());
+    cit = buf.begin();
+    for (int i = 0; cit + i < buf.end(); ++i)
+        printf("sort id(%4d) : %s\n", cit[i].get_type(), (char*)cit[i].get_data());
 }
 
 int main(int argc, char **argv)

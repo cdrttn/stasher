@@ -18,7 +18,8 @@ namespace ST
     class MetaRecord
     {
     public:
-        template <class> friend class MetaIter;
+        template <class> friend struct MetaIter;
+        template <class> friend struct ConstMetaIter;
         template <class> friend class BucketBuf;
 
         static const uint16_t metasize = MetaSize;
@@ -72,24 +73,38 @@ namespace ST
         uint8_t m_tmp[metasize];
     };
 
+    template <class RecT> struct MetaIter;
+    template <class RecT> struct ConstMetaIter;
 
-    template <class RecT>
-    class MetaIter: public std::iterator<std::random_access_iterator_tag, RecT>
+    template <class RecT> 
+    struct MetaIter: public std::iterator<std::random_access_iterator_tag, RecT, ptrdiff_t, RecT *, RecT &>
     {
-    public:
-        template <class> friend class BucketBuf;
         MetaIter() {}
         MetaIter(const MetaIter &iter) { copy(iter); }
-        MetaIter &operator=(const MetaIter<RecT> &iter) { copy(iter); return *this; }
+        MetaIter &operator=(const MetaIter &iter) { copy(iter); return *this; }
+
+        void copy(const MetaIter &iter)
+        {
+            if (this == &iter)
+                return;
+            m_rec.m_page = iter.m_rec.m_page;
+            m_rec.m_meta = iter.m_rec.m_meta;    
+        }
  
-        RecT &operator*() const { return *((RecT*)&m_rec); }
-        RecT *operator->() const { return (RecT*)&m_rec; }
+        RecT &operator*() const { return m_rec; }
+        RecT *operator->() const { return &m_rec; }
         bool operator==(const MetaIter &r) const { return m_rec.m_meta == r.m_rec.m_meta; }
+        bool operator==(const ConstMetaIter<RecT> &r) const { return m_rec.m_meta == r.m_rec.m_meta; }
         bool operator!=(const MetaIter &r) const { return m_rec.m_meta != r.m_rec.m_meta; }
+        bool operator!=(const ConstMetaIter<RecT> &r) const { return m_rec.m_meta != r.m_rec.m_meta; }
         bool operator<(const MetaIter &r) const { return m_rec.m_meta < r.m_rec.m_meta; }
+        bool operator<(const ConstMetaIter<RecT> &r) const { return m_rec.m_meta < r.m_rec.m_meta; }
         bool operator>(const MetaIter &r) const { return r < *this; } 
+        bool operator>(const ConstMetaIter<RecT> &r) const { return r < *this; } 
         bool operator<=(const MetaIter &r) const { return !(*this < r); }
+        bool operator<=(const ConstMetaIter<RecT> &r) const { return !(*this < r); }
         bool operator>=(const MetaIter &r) const { return !(r < *this); }
+        bool operator>=(const ConstMetaIter<RecT> &r) const { return !(r < *this); }
 
         MetaIter &operator++()
         {
@@ -151,27 +166,119 @@ namespace ST
             return tmp; 
         }
 
-    private:
         MetaIter(PageBuf *page, uint8_t *start)
         {
             m_rec.set_page(page);
             m_rec.set_meta(start); 
         }
         
-        //ensure a shallow copy
-        void copy(const MetaIter &iter)
+        mutable RecT m_rec;
+    };
+
+    template <class RecT> 
+    struct ConstMetaIter: public std::iterator<std::random_access_iterator_tag, RecT, ptrdiff_t, const RecT *, const RecT &>
+    {
+        ConstMetaIter() {}
+        ConstMetaIter(const ConstMetaIter &iter) { if (this == &iter) return; copy(iter); }
+        ConstMetaIter &operator=(const ConstMetaIter &iter) { if (this == &iter) return; copy(iter); return *this; }
+        ConstMetaIter(const MetaIter<RecT> &iter) { copy(iter); }
+        ConstMetaIter &operator=(const MetaIter<RecT> &iter) { copy(iter); return *this; }
+
+        template <class IterT>
+        void copy(const IterT &iter)
         {
-            //printf("%p iter_shallow %p\n", this, &iter); 
             m_rec.m_page = iter.m_rec.m_page;
             m_rec.m_meta = iter.m_rec.m_meta;    
         }
+ 
+        const RecT &operator*() const { return m_rec; }
+        const RecT *operator->() const { return &m_rec; }
+        bool operator==(const ConstMetaIter &r) const { return m_rec.m_meta == r.m_rec.m_meta; }
+        bool operator==(const MetaIter<RecT> &r) const { return m_rec.m_meta == r.m_rec.m_meta; }
+        bool operator!=(const ConstMetaIter &r) const { return m_rec.m_meta != r.m_rec.m_meta; }
+        bool operator!=(const MetaIter<RecT> &r) const { return m_rec.m_meta != r.m_rec.m_meta; }
+        bool operator<(const ConstMetaIter &r) const { return m_rec.m_meta < r.m_rec.m_meta; }
+        bool operator<(const MetaIter<RecT> &r) const { return m_rec.m_meta < r.m_rec.m_meta; }
+        bool operator>(const ConstMetaIter &r) const { return r < *this; } 
+        bool operator>(const MetaIter<RecT> &r) const { return r < *this; } 
+        bool operator<=(const ConstMetaIter &r) const { return !(*this < r); }
+        bool operator<=(const MetaIter<RecT> &r) const { return !(*this < r); }
+        bool operator>=(const ConstMetaIter &r) const { return !(r < *this); }
+        bool operator>=(const MetaIter<RecT> &r) const { return !(r < *this); }
 
-    private:
+        ConstMetaIter &operator++()
+        {
+            m_rec.m_meta += m_rec.metasize;
+            return *this;
+        }
+
+        ConstMetaIter operator++(int)
+        {
+            ConstMetaIter tmp(*this);
+            operator++();
+            return tmp;     
+        }
+        
+        ConstMetaIter &operator--()
+        {
+            m_rec.m_meta -= m_rec.metasize;
+            return *this;
+        }
+
+        ConstMetaIter operator--(int)
+        {
+            ConstMetaIter<RecT> tmp(*this);
+            operator--();
+            return tmp;     
+        }
+
+        ConstMetaIter &operator+=(ptrdiff_t n)
+        {   
+            m_rec.m_meta += m_rec.metasize * n;
+            return *this;            
+        }
+
+        ConstMetaIter &operator-=(ptrdiff_t n) { return *this += -n; }
+
+        const ConstMetaIter operator+(ptrdiff_t n) const
+        {
+            ConstMetaIter tmp(*this);
+            return tmp += n;
+        }
+
+        const ConstMetaIter operator-(ptrdiff_t n) const
+        {
+            ConstMetaIter tmp(*this);
+            return tmp -= n;
+        }
+
+        ptrdiff_t operator-(const ConstMetaIter &r) const
+        {
+            return (m_rec.m_meta - r.m_rec.m_meta) / m_rec.metasize;
+        }
+
+        RecT operator[](ptrdiff_t n) const 
+        { 
+            RecT tmp;
+            const RecT &val = *(*this + n); 
+            tmp.set_page(val.m_page);
+            tmp.set_meta(val.m_meta);
+            return tmp; 
+        }
+
+        ConstMetaIter(PageBuf *page, uint8_t *start)
+        {
+            m_rec.set_page(page);
+            m_rec.set_meta(start); 
+        }
+        
         RecT m_rec;
     };
     
     template <class RecT>
     inline MetaIter<RecT> operator+(ptrdiff_t n, const MetaIter<RecT> &x) { return x + n; }
+    template <class RecT>
+    inline ConstMetaIter<RecT> operator+(ptrdiff_t n, const ConstMetaIter<RecT> &x) { return x + n; }
 
     template <class RecT>
     class BucketBuf: public PageBuf
@@ -184,6 +291,7 @@ namespace ST
         };
 
         typedef MetaIter<RecT> iterator;
+        typedef ConstMetaIter<RecT> const_iterator;
 
     public:
         virtual ~BucketBuf() {}
@@ -198,12 +306,14 @@ namespace ST
         }
 
         iterator begin() { return iterator(this, get_payload()); }
+        const_iterator begin() const { return const_iterator(this, get_payload()); }
         iterator end() { return iterator(this, get_metaend()); }
-        uint16_t size() const { return (get_metaend() - get_payload()) / RecT::metasize; }
+        const_iterator end() const { return const_iterator(this, get_metaend()); }
 
         //size is the remaining bytes in this bucket
         bool empty() const { return get_size() == get_payloadsize(); }
         bool full() const { return !get_size(); } 
+        uint16_t size() const { return (get_metaend() - get_payload()) / RecT::metasize; }
 
     protected: 
         BucketBuf(Pager *pgr, uint32_t metaend, uint8_t marker)
@@ -234,7 +344,8 @@ namespace ST
         //this must update metadata
         void free_heap(uint8_t *start, uint16_t size)
         {
-            assert(start >= get_heap() && start < get_end());
+            assert(start >= get_heap() && start <= get_end() - size);
+            assert(size <= get_freesize());
         
             memmove(get_heap() + size, get_heap(), start - get_heap());            
             memset(get_heap(), 0, size); //!! this is optional 
@@ -250,10 +361,23 @@ namespace ST
         void alloc_meta(RecT &rec)
         {
             uint16_t size = rec.metasize;
-
             assert(size <= get_freesize());
+
             rec.set_meta(get_metaend());
             rec.set_page(this);
+            set_freesize(get_freesize() - size);
+            set_heapmetasize(get_heapmetasize() + size);
+        }
+
+        void alloc_meta_at(RecT &rec, uint8_t *start)
+        {
+            uint16_t size = rec.metasize;
+            assert(size <= get_freesize());
+            assert(start >= get_payload() && start <= get_metaend());
+    
+            rec.set_meta(start);
+            rec.set_page(this);
+            memmove(start + size, start, get_metaend() - start);
             set_freesize(get_freesize() - size);
             set_heapmetasize(get_heapmetasize() + size);
         }

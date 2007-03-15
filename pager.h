@@ -43,6 +43,7 @@ namespace ST
         bool allocated() const { return (get_buf() != NULL); }
         void make_dirty() { if (m_lrubuf) m_lrubuf->make_dirty(); }
         void discard() { if (m_lrubuf) m_lrubuf->set_discard(); }
+        bool is_anon() const { return m_lrubuf? m_lrubuf->anon() : false; }
         uint8_t *get_buf() { return m_lrubuf? m_lrubuf->get_buf() : NULL; }
         const uint8_t *get_buf() const { return m_lrubuf? m_lrubuf->get_buf() : NULL; }
         //uint8_t *get_end() { return get_buf() + get_pagesize(); }
@@ -134,9 +135,7 @@ namespace ST
         virtual ~Pager() 
         { 
             try
-            {
-                close(); 
-            } 
+            { close(); } 
             catch (...) {}
         }
 
@@ -185,9 +184,14 @@ namespace ST
         void free_page(BasicBuf &buf)
         {
             uint32_t page = buf.get_page();
-            buf.release();
-            return_page(buf);
-            free_pages(page, 1);
+            if (page)
+            {
+                buf.release();
+                return_page(buf);
+                free_pages(page, 1);
+            } 
+            else
+                return_page(buf);
         }
         
         //convert bytes to pages

@@ -193,7 +193,7 @@ void LRUCache::put_page(LRUNode *node)
 }
 
 //mark a range that was deallocated from disk so that none of the pages will be written
-//nodes that are still referenced are "condemned", so time is given to the user to clean up
+//nodes that are still referenced are "condemned", so time is given for the user to remove their reference
 void LRUCache::clear_extent(uint32_t offset, uint32_t span, int wipe)
 {
     PAGEMAP::iterator piter;

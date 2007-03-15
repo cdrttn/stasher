@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <string>
 #include <vector>
+#include <list>
 
 using namespace ST;
 using namespace std;
@@ -97,6 +98,7 @@ int main(int argc, char **argv)
         sprintf((char *)pb.get_payload(), "list %d", i);
         printf("head %d, tail %d\n", pl.get_head(), pl.get_tail());
     }
+    assert(pl.size() == PS/2);
    
     int cnt; 
     puts("forward");
@@ -108,7 +110,7 @@ int main(int argc, char **argv)
     for (cnt = 0, it = --pl.end(); it != pl.end(); --it, ++cnt)
         printf("--pl %s, prev %d, next %d\n", it->get_payload(), it->get_prev(), it->get_next());
     assert(cnt == PS/2);
-
+     
     for (cnt = 0, it = --pl.end(); it != pl.end(); ++cnt)
     {
         if (! (cnt%2))
@@ -122,18 +124,43 @@ int main(int argc, char **argv)
         {
             b = it--; 
             pl.erase(b);
-            pgr.return_page(*b);
         }
         else
             --it;
     }
 
+    PageList<PageBuf>::const_iterator cit;
     puts("insert");
-    for (cnt = 0, it = pl.begin(); it != pl.end(); ++it, ++cnt)
+    for (cnt = 0, cit = pl.begin(); cit != pl.end(); ++cit, ++cnt)
         printf("++pl %s, prev %d, next %d\n", it->get_payload(), it->get_prev(), it->get_next());
-    for (cnt = 0, it = --pl.end(); it != pl.end(); --it, ++cnt)
+    pl.clear();
+    for (cnt = 0, cit = --pl.end(); cit != pl.end(); --cit, ++cnt)
         printf("--pl %s, prev %d, next %d\n", it->get_payload(), it->get_prev(), it->get_next());
- 
+
+    pl.push_back(pb);
+    sprintf((char *)pb.get_payload(), "lolo1");
+    pl.push_back(pb);
+    sprintf((char *)pb.get_payload(), "lolo2");
+
+    //PageList<PageBuf>::iterator piit;
+    it = pl.begin();
+    cit = it;
+    //sprintf((char *)cit->get_payload(), "constnes");
+    it->get_payload()[0] = 'f';
+
+    std::list<int> fucklist;
+    std::list<int> &fucklistc = fucklist;
+
+    fucklist.push_back(3);
+    fucklist.push_back(2);
+    fucklist.push_back(1);
+
+    std::list<int>::iterator lit;
+    std::list<int>::const_iterator lcit;
+
+    //lcit = fucklist.begin();
+    //lit = lcit;
+    
     return 0;
 }
 
