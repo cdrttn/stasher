@@ -1,9 +1,10 @@
-#include "pager.h"
-#include "bucketbuf.h"
 #include <stdio.h>
 #include <string>
 #include <iterator>
 #include <algorithm>
+#include "pager.h"
+#include "bucketbuf.h"
+#include "bucketlist.h"
 
 using namespace ST;
 using namespace std;
@@ -39,14 +40,27 @@ private:
     }
 };
 
-class TestBucketBuf: public BucketBuf<TestRec>
+struct DataIn
+{
+    DataIn(void *d, uint16_t s, uint8_t t = 0)
+        :data(d), size(s), tok(t) {}
+
+    void *data;
+    uint16_t size;
+    uint8_t tok; 
+};
+
+class TestBucketBuf: public BucketBuf<TestRec, const DataIn&>
 {
 public:
     TestBucketBuf(Pager *pgr = NULL): 
-        BucketBuf<TestRec>(pgr, BucketBuf<TestRec>::BUCKET_END, 'B')
+        BucketBuf<TestRec, const DataIn&>(pgr, BucketBuf<TestRec, const DataIn&>::BUCKET_END, 'B')
         {}
 
-    bool has_room(uint16_t size) { return get_freesize() >= size + TEST_RECORD_END; }
+    bool has_room(const DataIn &di) { return get_freesize() >= di.size + TEST_RECORD_END; }
+    void push_back(const DataIn &di) { add_data(di.data, di.size, di.tok); }
+    void push_front(const DataIn &di) { add_data(di.data, di.size, di.tok); }
+
     void add_data(void *data, uint16_t size, uint8_t tok = 0)
     {
         uint8_t *ptr;
@@ -55,11 +69,12 @@ public:
         ptr = alloc_heap(size);
         memcpy(ptr, data, size);
 
-        alloc_meta_at(newrec, get_payload());
+        alloc_meta(newrec);
         newrec.set_type(tok);
         newrec.set_datasize(size);
         newrec.set_dataptr(ptr_meta(ptr));
     }
+
     //remove has effect of item++
     void remove(iterator item)
     {
@@ -71,33 +86,37 @@ public:
 
 bool cmp(const TestRec &l, const TestRec &r) 
 { 
-    return strcmp((const char *)l.get_data(), (const char*)r.get_data()) == -1;
+    return strcmp((const char *)l.get_data(), (const char*)r.get_data()) < 0;
 }
 
 void write_test(const char *file)
 {
     char data[256];
-    uint16_t len;
     int i;
     Pager pgr;
     TestBucketBuf buf;
 
     pgr.open(file, Pager::OPEN_WRITE);
     printf("opened(write) -> %s, pages -> %d\n", pgr.filename().c_str(), pgr.length());
+    BucketList<TestBucketBuf> blist(pgr);
 
-    pgr.new_page(buf);
+    //pgr.new_page(buf);
 
-    for (i = 0; ;i++)
+    for (i = 0; i < 255; i++)
     {
         sprintf(data, "(%4d) testing one two three", i);
-        len = strlen(data) + 1;  
-        if (buf.has_room(len))
-            buf.add_data(data, len, i);
+        blist.push_back(DataIn(data, strlen(data) + 1, i));
+        /*
+        DataIn di(data, strlen(data) + 1, i);
+
+        if (buf.has_room(di))
+            buf.push_back(di);
         else
             break;
+        */
     }
-
-    TestBucketBuf::iterator a, b, it = buf.begin();
+    puts("HERE");
+    //TestBucketBuf::iterator a, b, it = buf.begin();
 
     //a = buf.begin() + 5;
     //b = buf.begin() + 7;
@@ -107,7 +126,7 @@ void write_test(const char *file)
 
     //random_shuffle(buf.begin(), buf.end());
     //sort(buf.begin(), buf.end(), cmp);
-    TestRec tmp;
+    //TestRec tmp;
     //while (buf.begin() != buf.end())
     //    buf.remove(buf.begin());
     //a = buf.begin() + 5; 
@@ -135,6 +154,7 @@ void write_test(const char *file)
         //a = it++;
         //buf.remove(it);
     //}
+    //buf.clear();
 }
 
 void read_test(const char *file)
@@ -148,6 +168,7 @@ void read_test(const char *file)
     printf("opened(read) -> %s, pages -> %d\n", pgr.filename().c_str(), pgr.length());
 
     pgr.read_page(buf, 1);
+    puts("HERE2");
     for (cit = buf.begin(); cit < buf.end(); ++cit)
         printf("id(%4d) : %s\n", cit->get_type(), (char*)cit->get_data());
     sort(buf.begin(), buf.end(), cmp);
@@ -165,6 +186,7 @@ int main(int argc, char **argv)
     }
 
     write_test(argv[1]);
+    puts("HERE1.5");
     read_test(argv[1]);
 
     return 0;

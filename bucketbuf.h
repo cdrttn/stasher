@@ -1,10 +1,11 @@
 #ifndef _BUCKETBUF_H_
 #define _BUCKETBUF_H_
 
-#include "pager.h"
 #include <assert.h>
 #include <string.h>
 #include <iterator>
+#include "pager.h"
+#include "bucketbuf.h"
 
 namespace ST
 {
@@ -20,7 +21,7 @@ namespace ST
     public:
         template <class> friend struct MetaIter;
         template <class> friend struct ConstMetaIter;
-        template <class> friend class BucketBuf;
+        template <class, class> friend class BucketBuf;
 
         static const uint16_t metasize = MetaSize;
 
@@ -28,6 +29,9 @@ namespace ST
         MetaRecord(): m_meta(m_tmp), m_page(NULL) {} 
         MetaRecord(const MetaRecord &rec) { m_meta = m_tmp; m_page = NULL; copy(rec); }
         MetaRecord &operator=(const MetaRecord &rec) { copy(rec); return *this; }
+        bool operator==(const MetaRecord &r) { return m_meta == r.m_meta; }
+        bool operator!=(const MetaRecord &r) { return m_meta != r.m_meta; }
+
         virtual ~MetaRecord() {}
 
         void set_type(uint8_t t) { *m_meta = t; }
@@ -36,6 +40,8 @@ namespace ST
         void set_flag(uint8_t t) { *m_meta |= t; } 
         void unset_flag(uint8_t t) { *m_meta &= ~t; }
         bool has_flag(uint8_t t) const { return (*m_meta & t) != 0; }
+
+        virtual void release() {}
 
     protected:
         uint8_t *meta_deref(uint16_t ptr)
@@ -280,7 +286,7 @@ namespace ST
     template <class RecT>
     inline ConstMetaIter<RecT> operator+(ptrdiff_t n, const ConstMetaIter<RecT> &x) { return x + n; }
 
-    template <class RecT>
+    template <class RecT, class InputT>
     class BucketBuf: public PageBuf
     {
     public:
@@ -290,19 +296,20 @@ namespace ST
             BUCKET_END = BUCKET_HEAPMETASIZE + 2
         };
 
+        typedef InputT input_type;
+        typedef RecT rec_type;
         typedef MetaIter<RecT> iterator;
         typedef ConstMetaIter<RecT> const_iterator;
 
     public:
         virtual ~BucketBuf() {}
         
-        bool validate() { return get_type() == m_bucketmarker; }
+        virtual bool validate() { return get_type() == m_bucketmarker; }
         virtual void create()
         {
             set_type(m_bucketmarker);
             set_freesize(get_payloadsize());
             set_heapmetasize(0);
-            set_next(0);
         }
 
         iterator begin() { return iterator(this, get_payload()); }
@@ -314,6 +321,17 @@ namespace ST
         bool empty() const { return get_size() == get_payloadsize(); }
         bool full() const { return !get_size(); } 
         uint16_t size() const { return (get_metaend() - get_payload()) / RecT::metasize; }
+
+        void clear() 
+        {
+            for (iterator it = begin(); it != end(); ++it)
+                it->release();
+            clear_payload();
+            create();
+        }
+
+        //called by free_page()
+        virtual void release() { clear(); }
 
     protected: 
         BucketBuf(Pager *pgr, uint32_t metaend, uint8_t marker)
@@ -388,7 +406,7 @@ namespace ST
             uint8_t *dest = rec.m_meta;
             uint8_t *src = dest + size;
 
-            assert(dest >= get_payload() && src <= get_metaend());
+            assert(dest >= get_payload() && src <= get_metaend() - size);
             memmove(dest, src, get_metaend() - src);
 
             set_freesize(get_freesize() + size);

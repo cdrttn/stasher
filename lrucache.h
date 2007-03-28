@@ -111,12 +111,13 @@ namespace ST
     public:
         LRUCache()
         {
-            m_tail = m_head = NULL;
+            m_head = m_tail = NULL;
+            init(-1, 0, 0);
         }
 
         LRUCache(int fd, uint16_t pagesize, uint32_t maxcache)
         {
-            m_tail = m_head = NULL;
+            m_head = m_tail = NULL;
             init(fd, pagesize, maxcache);
         }
 

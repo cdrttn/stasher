@@ -26,8 +26,8 @@ namespace ST
         BasicBuf &operator=(const BasicBuf &bbuf) { copy(bbuf); return *this; }
         bool operator==(const BasicBuf &r) const { return m_lrubuf == r.m_lrubuf; }        
         bool operator!=(const BasicBuf &r) const { return m_lrubuf != r.m_lrubuf; }        
-        operator bool() const { return get_page() != 0; }
-        bool operator!() const { return get_page() == 0; }
+        operator bool() const { return m_lrubuf != NULL; }
+        bool operator!() const { return m_lrubuf == NULL; }
 
         virtual ~BasicBuf();
 
